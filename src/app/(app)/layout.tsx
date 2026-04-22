@@ -5,14 +5,18 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
 import {
-  Sun, Sunset, Moon, Menu, X, ChevronRight, LogOut,
-  FileText, Radar, Layers,
+  Sun, Sunset, Moon, Menu, X, ChevronRight, LogOut, Layers,
+  BarChart3, Lightbulb, Workflow, BookOpen, Radar, Activity,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
-  { label: "Conteúdo", href: "/conteudo", icon: FileText },
-  { label: "Radar", href: "/conteudo/radar", icon: Radar },
+  { label: "Visão Geral", href: "/visao-geral", icon: BarChart3 },
+  { label: "Ideias", href: "/ideias", icon: Lightbulb },
+  { label: "Funil", href: "/funil", icon: Workflow },
+  { label: "Skills", href: "/skills", icon: BookOpen },
+  { label: "Radar", href: "/radar", icon: Radar },
+  { label: "Uso da API", href: "/uso", icon: Activity },
 ]
 
 type Theme = "day" | "sunset" | "night"
@@ -44,7 +48,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex flex-col h-full">
             {/* Header */}
             <div className="flex items-center justify-between px-5 h-16 border-b border-cockpit-border">
-              <Link href="/conteudo" className="flex items-center gap-2.5">
+              <Link href="/visao-geral" className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center">
                   <Layers size={15} className="text-accent" />
                 </div>
@@ -68,7 +72,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {/* Nav */}
             <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
               {navItems.map((item) => {
-                const isActive = pathname === item.href || (item.href !== "/conteudo" && pathname.startsWith(item.href))
+                const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
                 return (
                   <Link
                     key={item.href}

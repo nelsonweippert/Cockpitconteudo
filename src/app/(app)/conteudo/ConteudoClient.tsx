@@ -36,20 +36,28 @@ const PHASE_COLOR: Record<string, string> = {
 const SKILL_ICON: Record<string, string> = { SHORT_VIDEO: "⚡", LONG_VIDEO: "🎬", INSTAGRAM: "📸" }
 const PIPELINE_PHASES: ContentPhase[] = ["IDEATION", "ELABORATION", "BRIEFING", "EDITING_SENT", "PUBLISHED"]
 
-type Tab = "overview" | "pipeline" | "ideas" | "skills" | "usage"
+export type ConteudoTab = "overview" | "pipeline" | "ideas" | "skills" | "usage"
+type Tab = ConteudoTab
 type ViewMode = "pipeline" | "list"
 
 function toggle<T>(arr: T[], val: T): T[] {
   return arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]
 }
 
-interface Props { initialContents: Content[]; areas: Area[] }
+interface Props {
+  initialContents: Content[]
+  areas: Area[]
+  /** Tab inicial quando renderizado por rota específica. Default "overview". */
+  initialTab?: Tab
+  /** Esconde o seletor de tabs quando a rota já é dedicada a uma tab. */
+  hideTabs?: boolean
+}
 
-export function ConteudoClient({ initialContents, areas }: Props) {
+export function ConteudoClient({ initialContents, areas, initialTab = "overview", hideTabs = false }: Props) {
   const [contents, setContents] = useState<Content[]>(initialContents)
   const [selectedContent, setSelectedContent] = useState<Content | null>(null)
   const [isPending, startTransition] = useTransition()
-  const [tab, setTab] = useState<Tab>("overview")
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [viewMode, setViewMode] = useState<ViewMode>("pipeline")
 
   // Creation flow
@@ -535,21 +543,23 @@ export function ConteudoClient({ initialContents, areas }: Props) {
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex items-center gap-1 bg-cockpit-border-light rounded-xl p-1 w-fit">
-          {([
-            { key: "overview" as Tab, label: "Visão Geral", icon: BarChart3 },
-            { key: "ideas" as Tab, label: "Repositório de Ideias", icon: Lightbulb },
-            { key: "pipeline" as Tab, label: "Pipeline", icon: Workflow },
-            { key: "skills" as Tab, label: "Skills & Boas Práticas", icon: BookOpen },
-            { key: "usage" as Tab, label: "Uso da API", icon: Activity },
-          ]).map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => setTab(key)} className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-              tab === key ? "bg-cockpit-surface text-cockpit-text shadow-sm" : "text-cockpit-muted hover:text-cockpit-text"
-            )}><Icon size={13} /> {label}</button>
-          ))}
-        </div>
+        {/* Tabs (escondido quando rota dedicada) */}
+        {!hideTabs && (
+          <div className="flex items-center gap-1 bg-cockpit-border-light rounded-xl p-1 w-fit">
+            {([
+              { key: "overview" as Tab, label: "Visão Geral", icon: BarChart3 },
+              { key: "ideas" as Tab, label: "Repositório de Ideias", icon: Lightbulb },
+              { key: "pipeline" as Tab, label: "Pipeline", icon: Workflow },
+              { key: "skills" as Tab, label: "Skills & Boas Práticas", icon: BookOpen },
+              { key: "usage" as Tab, label: "Uso da API", icon: Activity },
+            ]).map(({ key, label, icon: Icon }) => (
+              <button key={key} onClick={() => setTab(key)} className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                tab === key ? "bg-cockpit-surface text-cockpit-text shadow-sm" : "text-cockpit-muted hover:text-cockpit-text"
+              )}><Icon size={13} /> {label}</button>
+            ))}
+          </div>
+        )}
 
         {/* Creation flow (appears in any tab) */}
         {showCreate && (
