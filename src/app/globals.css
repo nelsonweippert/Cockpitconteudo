@@ -1,0 +1,146 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ========================================
+   Cockpit de Produtividade — Design System
+   Accent: #00D6AB (mint green)
+   ======================================== */
+
+@theme inline {
+  /* Brand */
+  --color-accent: #00D6AB;
+  --color-accent-hover: #1DF9C1;
+  --color-accent-dark: #00AD8A;
+
+  /* Fonts */
+  --font-sora: "Sora", sans-serif;
+  --font-outfit: "Outfit", sans-serif;
+}
+
+/* Cockpit tokens — runtime switchable via class */
+@theme {
+  /* Day (default) */
+  --color-cockpit-bg: #F5F5F7;
+  --color-cockpit-surface: #FFFFFF;
+  --color-cockpit-surface-hover: #F9FAFB;
+  --color-cockpit-border: #E5E7EB;
+  --color-cockpit-border-light: #F3F4F6;
+  --color-cockpit-text: #1D1D1F;
+  --color-cockpit-muted: #6B7280;
+  --color-cockpit-accent: #00D6AB;
+}
+
+/* ========================================
+   Base
+   ======================================== */
+
+html {
+  scroll-behavior: smooth;
+  font-size: 120%;
+  zoom: 1.02;
+}
+
+body {
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  background: var(--color-cockpit-bg);
+  color: var(--color-cockpit-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sora), system-ui, sans-serif;
+}
+
+button { font-family: inherit; cursor: pointer; }
+
+/* ========================================
+   Scrollbar
+   ======================================== */
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-cockpit-bg); }
+::-webkit-scrollbar-thumb { background: var(--color-cockpit-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-accent); }
+
+/* ========================================
+   Layout
+   ======================================== */
+
+.cockpit-layout {
+  background: var(--color-cockpit-bg);
+  color: var(--color-cockpit-text);
+  min-height: 100vh;
+}
+
+.cockpit-sidebar {
+  background: var(--color-cockpit-surface);
+  border-right: 1px solid var(--color-cockpit-border);
+}
+
+.cockpit-card {
+  background: var(--color-cockpit-surface);
+  border: 1px solid var(--color-cockpit-border);
+  border-radius: 16px;
+  padding: 24px;
+  transition: box-shadow 0.2s ease;
+}
+
+.cockpit-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+/* ========================================
+   Theme: Sunset
+   ======================================== */
+
+.cockpit-theme-sunset .cockpit-layout {
+  --color-cockpit-bg: #1C1412;
+  --color-cockpit-surface: #2A1F1A;
+  --color-cockpit-surface-hover: #342820;
+  --color-cockpit-border: #3D2E24;
+  --color-cockpit-border-light: #4A3830;
+  --color-cockpit-text: #F5E6DB;
+  --color-cockpit-muted: #9B7E68;
+  --color-cockpit-accent: #FF8C42;
+  background: linear-gradient(180deg, #1C1412 0%, #151010 100%);
+}
+
+.cockpit-theme-sunset .cockpit-sidebar {
+  background: #221A15;
+  border-color: #3D2E24;
+}
+
+.cockpit-theme-sunset .cockpit-card {
+  background: #2A1F1A;
+  border-color: #3D2E24;
+}
+
+/* ========================================
+   Theme: Night
+   ======================================== */
+
+.cockpit-theme-night .cockpit-layout {
+  --color-cockpit-bg: #0B0E14;
+  --color-cockpit-surface: #131720;
+  --color-cockpit-surface-hover: #1A1F2B;
+  --color-cockpit-border: #1E2433;
+  --color-cockpit-border-light: #252D3F;
+  --color-cockpit-text: #E2E8F0;
+  --color-cockpit-muted: #64748B;
+  --color-cockpit-accent: #00D6AB;
+  background: linear-gradient(180deg, #0B0E14 0%, #080B10 100%);
+}
+
+.cockpit-theme-night .cockpit-sidebar {
+  background: #0F1219;
+  border-color: #1E2433;
+}
+
+.cockpit-theme-night .cockpit-card {
+  background: #131720;
+  border-color: #1E2433;
+}
+
+.cockpit-theme-night .cockpit-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 214, 171, 0.04);
+}

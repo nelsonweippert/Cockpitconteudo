@@ -1,0 +1,286 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ========================================
+// Auth
+// ========================================
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  areas          Area[]
+  contents       Content[]
+  skillSources   SkillSource[]
+  apiUsage       ApiUsage[]
+  monitorTerms   MonitorTerm[]
+  ideaFeed       IdeaFeed[]
+  newsEvidence   NewsEvidence[]
+
+  @@map("users")
+}
+
+// ========================================
+// Áreas — entidade raiz de classificação
+// ========================================
+
+model Area {
+  id          String   @id @default(cuid())
+  name        String
+  color       String   @default("#00D6AB")
+  icon        String   @default("📁")
+  description String?
+  isArchived  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  contents     Content[]
+  contentAreas ContentArea[]
+
+  @@index([userId])
+  @@map("areas")
+}
+
+// ========================================
+// Conteúdo
+// ========================================
+
+enum Platform {
+  YOUTUBE
+  INSTAGRAM
+  TIKTOK
+  TWITCH
+  OTHER
+}
+
+enum ContentFormat {
+  LONG_VIDEO
+  SHORT
+  REELS
+  POST
+  LIVE
+  THREAD
+}
+
+enum ContentPhase {
+  IDEATION
+  ELABORATION
+  BRIEFING
+  EDITING_SENT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ContentSkill {
+  SHORT_VIDEO
+  LONG_VIDEO
+  INSTAGRAM
+  INSTAGRAM_REELS
+  YOUTUBE_SHORTS
+  YOUTUBE_VIDEO
+  TIKTOK_VIDEO
+}
+
+model Content {
+  id             String        @id @default(cuid())
+  title          String
+  platform       Platform      @default(YOUTUBE)
+  format         ContentFormat @default(LONG_VIDEO)
+  phase          ContentPhase  @default(IDEATION)
+  rawVideoUrl    String?
+  skill          ContentSkill?
+  targetDuration Int?
+  hook           String?
+  script         String?
+  ideaFeedId     String?
+  tags           String[]
+  thumbnailNotes String?
+  research       String?
+  titleOptions   String[]
+  description    String?
+  hashtags       String[]
+  checklist      Json?
+  plannedDate    DateTime?
+  publishedAt    DateTime?
+  publishedUrl   String?
+  notes          String?
+  isArchived     Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  userId  String
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  areaId  String?
+  area    Area?          @relation(fields: [areaId], references: [id])
+  areas   ContentArea[]
+  metrics ContentMetrics?
+
+  @@index([userId, phase])
+  @@map("contents")
+}
+
+model ContentArea {
+  contentId String
+  areaId    String
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  area      Area    @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, areaId])
+  @@map("content_areas")
+}
+
+model ContentMetrics {
+  id            String  @id @default(cuid())
+  views         Int?
+  reach         Int?
+  engagement    Float?
+  ctr           Float?
+  retention     Float?
+  newFollowers  Int?
+  directRevenue Float?
+  notes         String?
+  contentId     String  @unique
+  content       Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@map("content_metrics")
+}
+
+// ========================================
+// API Usage — Tracking de uso e custos
+// ========================================
+
+model ApiUsage {
+  id           String   @id @default(cuid())
+  action       String
+  model        String   @default("claude-sonnet-4-6")
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costUsd      Float    @default(0)
+  durationMs   Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, action])
+  @@map("api_usage")
+}
+
+// ========================================
+// Repositório de Ideias — Monitoramento e Feed
+// ========================================
+
+model MonitorTerm {
+  id               String    @id @default(cuid())
+  term             String
+  intent           String?
+  isActive         Boolean   @default(true)
+  sources          Json?
+  sourcesUpdatedAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("monitor_terms")
+}
+
+model IdeaFeed {
+  id                       String        @id @default(cuid())
+  title                    String
+  summary                  String
+  angle                    String?
+  source                   String?
+  sourceUrl                String?
+  publishedAt              DateTime?
+  language                 String?       @default("pt-BR")
+  pioneerScore             Int?
+  relevance                String?
+  hook                     String?
+  term                     String
+  score                    Int           @default(90)
+  evidenceId               String?
+  evidence                 NewsEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+  evidenceQuote            String?
+  supportingEvidenceIds    String[]      @default([])
+  viralScore               Int?
+  publisherHosts           String[]      @default([])
+  hasInternationalCoverage Boolean       @default(false)
+  platformFit              Json?
+  isUsed                   Boolean       @default(false)
+  isDiscarded              Boolean       @default(false)
+  isFavorite               Boolean       @default(false)
+  createdAt                DateTime      @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, isUsed, isDiscarded])
+  @@index([userId, publishedAt])
+  @@index([evidenceId])
+  @@map("idea_feed")
+}
+
+model NewsEvidence {
+  id              String    @id @default(cuid())
+  term            String
+  url             String
+  title           String
+  publishedAt     DateTime?
+  summary         String
+  keyQuote        String?
+  sourceAuthority String    @default("UNKNOWN")
+  language        String    @default("pt-BR")
+  relevanceScore  Int       @default(50)
+  freshnessHours  Int?
+  processed       Boolean   @default(false)
+  capturedAt      DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ideas IdeaFeed[]
+
+  @@unique([userId, url])
+  @@index([userId, capturedAt])
+  @@index([userId, term, capturedAt])
+  @@index([userId, processed])
+  @@map("news_evidence")
+}
+
+// ========================================
+// Skills — Fontes e contribuições do usuário
+// ========================================
+
+model SkillSource {
+  id        String   @id @default(cuid())
+  skillId   String
+  title     String
+  url       String?
+  content   String?
+  type      String   @default("source")
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, skillId])
+  @@map("skill_sources")
+}
