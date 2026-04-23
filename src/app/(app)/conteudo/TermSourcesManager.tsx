@@ -45,16 +45,42 @@ interface Props {
 
 type DiscoverStage = "decomp" | "discover" | "validate"
 
-async function callStage<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  })
-  let data: { success: boolean; error?: string; data?: T }
-  try { data = await res.json() } catch { throw new Error(`${url}: HTTP ${res.status} — resposta inválida`) }
-  if (!res.ok || !data.success) throw new Error(data.error || `${url}: HTTP ${res.status}`)
-  return data.data as T
+async function callStageOnce<T>(url: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; status: number; error: string }> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    // 502/504 geralmente vêm sem JSON body (HTML da Vercel). Detecta e retorna estruturado.
+    if (!res.ok && [502, 503, 504].includes(res.status)) {
+      return { ok: false, status: res.status, error: `gateway_timeout` }
+    }
+    let data: { success: boolean; error?: string; data?: T }
+    try { data = await res.json() } catch { return { ok: false, status: res.status, error: `resposta inválida (HTTP ${res.status})` } }
+    if (!res.ok || !data.success) return { ok: false, status: res.status, error: data.error || `HTTP ${res.status}` }
+    return { ok: true, data: data.data as T }
+  } catch (err) {
+    return { ok: false, status: 0, error: err instanceof Error ? err.message : "network error" }
+  }
+}
+
+// Retry automático em 502/504/503 (gateway timeouts) — backoff linear 3s, 6s.
+async function callStage<T>(url: string, body: unknown, maxAttempts = 3): Promise<T> {
+  let lastError = ""
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const result = await callStageOnce<T>(url, body)
+    if (result.ok) return result.data
+    lastError = result.error
+    // Só retenta em timeouts de gateway; erros de validação (400/401/500) não se repetem
+    const retryable = [502, 503, 504, 0].includes(result.status)
+    if (!retryable || attempt >= maxAttempts) {
+      throw new Error(`${url}: ${lastError}`)
+    }
+    console.warn(`[stage] ${url} falhou (tentativa ${attempt}/${maxAttempts}): ${lastError}. Retrying em ${attempt * 3}s...`)
+    await new Promise((r) => setTimeout(r, attempt * 3000))
+  }
+  throw new Error(`${url}: ${lastError} (esgotadas ${maxAttempts} tentativas)`)
 }
 
 export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) {

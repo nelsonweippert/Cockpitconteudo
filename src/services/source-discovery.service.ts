@@ -102,6 +102,30 @@ export type TermSource = {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+// Seleciona as N queries mais valiosas das planejadas no stage 1.
+// Prioriza diversidade de strategy + balance de idiomas.
+function prioritizeQueries<T extends { strategy: string; language: string }>(queries: T[], max: number): T[] {
+  if (queries.length <= max) return queries
+  const seenStrategies = new Set<string>()
+  const seenByLang: Record<string, number> = {}
+  const selected: T[] = []
+  // Primeira passada: uma por strategy única
+  for (const q of queries) {
+    if (selected.length >= max) break
+    if (!seenStrategies.has(q.strategy)) {
+      seenStrategies.add(q.strategy)
+      seenByLang[q.language] = (seenByLang[q.language] ?? 0) + 1
+      selected.push(q)
+    }
+  }
+  // Segunda passada: preenche até max mantendo balance
+  for (const q of queries) {
+    if (selected.length >= max) break
+    if (!selected.includes(q)) selected.push(q)
+  }
+  return selected
+}
+
 function normalizeHost(raw: string): string {
   return raw.toLowerCase().trim()
     .replace(/^https?:\/\//, "")
@@ -274,6 +298,10 @@ export async function stageDiscovery(opts: {
 }): Promise<z.infer<typeof DiscoveryResponseSchema> & { _usage: { input: number; output: number; cacheRead: number; cacheCreation: number; searchesUsed: number; durationMs: number } }> {
   const { term, intent, decomposition, userId } = opts
 
+  // Prioriza as queries mais valiosas: diferentes strategies + mix de idiomas.
+  // Limita a 4 pra evitar timeout de 504 em proxies que cortam em 25-60s.
+  const prioritizedQueries = prioritizeQueries(decomposition.queries, 4)
+
   const userPrompt = `TEMA: "${term}"
 ${intent ? `INTENÇÃO: ${intent}` : ""}
 
@@ -283,23 +311,25 @@ PERFIS ALVO:
 - BLOG: ${decomposition.perfis_alvo.blog}
 
 ANTI-PADRÕES A EVITAR:
-${decomposition.anti_padroes.map((a) => `- ${a}`).join("\n")}
+${decomposition.anti_padroes.slice(0, 5).map((a) => `- ${a}`).join("\n")}
 
-QUERIES PLANEJADAS (${decomposition.queries.length}):
-${decomposition.queries.map((q, i) => `[${i + 1}] (${q.strategy}/${q.language}) "${q.query}" — meta: ${q.goal}`).join("\n")}
+QUERIES PRIORITÁRIAS (${prioritizedQueries.length}):
+${prioritizedQueries.map((q, i) => `[${i + 1}] (${q.strategy}/${q.language}) "${q.query}"`).join("\n")}
 
-Execute web_search em cada query priorizando estratégias diversas. Agregue candidatos com metadata foundVia. Mínimo 15, máximo 50.`
+Execute TODAS as queries acima. Agregue candidatos com foundVia. Alvo 12-25 candidatos. Se chegar a 20+, pare.`
 
   const start = Date.now()
+  console.log(`[stage2] iniciando — term="${term}" queries=${prioritizedQueries.length}`)
   const { text, usage } = await runWithPauseTurn({
     systemPrompt: buildDiscoverySystemPrompt(),
     userPrompt,
-    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 } as Anthropic.MessageCreateParams["tools"] extends (infer U)[] ? U : never] as Anthropic.MessageCreateParams["tools"],
+    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 4 } as Anthropic.MessageCreateParams["tools"] extends (infer U)[] ? U : never] as Anthropic.MessageCreateParams["tools"],
     effort: "low",
-    maxTokens: 6000,
+    maxTokens: 4000,
     outputSchema: DiscoveryResponseSchema,
-    maxRounds: 5,
+    maxRounds: 3,
   })
+  console.log(`[stage2] anthropic returned — searchesUsed=${usage.searchesUsed} inputTokens=${usage.input} outputTokens=${usage.output}`)
   const durationMs = Date.now() - start
 
   let parsed: z.infer<typeof DiscoveryResponseSchema>
