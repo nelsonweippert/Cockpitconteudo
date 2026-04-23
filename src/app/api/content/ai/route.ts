@@ -137,13 +137,32 @@ ${notes ? `- Notas: ${notes}` : ""}
 Escreva um roteiro COMPLETO que caiba na duração alvo, seguindo a DIRETRIZ DE ROTEIRO acima (quando presente) e as boas práticas da skill.
 ${skillConfig?.scriptTemplates?.[0] ? `Template-base: ${skillConfig.scriptTemplates[0].structure.join(" → ")}` : ""}
 
-FORMATO DO ROTEIRO:
-- Divida em BLOCOS claros (ABERTURA, BLOCO 1, BLOCO 2, etc., FECHAMENTO)
-- Cada bloco deve ter o TEXTO EXATO que o apresentador vai falar
-- Escreva como fala natural, não como texto escrito
-- NÃO inclua marcações de edição ([CORTE], [B-ROLL], [ZOOM], etc)
-- NÃO inclua indicações técnicas de câmera ou efeitos
-- Foque 100% no conteúdo falado, estruturado por blocos`
+FORMATO OBRIGATÓRIO — cada bloco DEVE ter TRÊS partes, nessa ordem:
+
+## BLOCO N — NOME DO BLOCO (HOOK / CONTEXTO / REVELAÇÃO / CTA / etc.) — [tempo estimado]
+🎯 **Objetivo:** uma frase sobre o que ESTE bloco precisa entregar (capturar atenção / gerar tensão / revelar dado / levar à ação).
+
+⭐ **FRASE-ÂNCORA:** "uma única frase (máx 2 linhas) que o apresentador NÃO PODE esquecer de falar neste bloco". É o ponto memorável que, sozinho, já reforça o objetivo do bloco. Pense nela como quote que serviria de corte pra Reels isolado.
+
+**Texto completo:**
+[texto corrido que o apresentador vai falar, em linguagem de fala natural, incorporando a frase-âncora dentro de forma fluida]
+
+---
+
+REGRAS DA FRASE-ÂNCORA (obrigatórias):
+- **Hook** → pergunta provocativa, dado chocante ou afirmação inesperada (faz o espectador parar de scrollar).
+- **Contexto/Desenvolvimento** → analogia forte, contraste ou verdade que reposiciona o tema.
+- **Revelação/Clímax** → a conclusão de maior impacto ("o dado que muda tudo").
+- **CTA/Fechamento** → comando direto e específico que conecta ao valor entregue ("me segue se você não quer ficar pra trás nisso").
+- Cada frase-âncora deve ser CURTA (máx 2 linhas), concreta, e fazer sentido ISOLADA.
+- NUNCA genérica ("isso é importante", "pense nisso"). Sempre específica ao tema.
+
+REGRAS GERAIS:
+- Divida em BLOCOS claros (ABERTURA, BLOCO 1, BLOCO 2, ..., FECHAMENTO).
+- Escreva como fala natural, não como texto escrito.
+- NÃO inclua marcações de edição ([CORTE], [B-ROLL], [ZOOM], etc.) — só o que se fala.
+- NÃO inclua indicações técnicas de câmera ou efeitos.
+- Comece direto no primeiro BLOCO (sem preâmbulo/explicação do roteiro).`
       break
 
     case "generate_research":
