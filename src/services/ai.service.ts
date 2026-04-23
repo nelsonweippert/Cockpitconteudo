@@ -99,8 +99,14 @@ const DiscoveryItemSchema = z.object({
   title: z.string().describe("Título da matéria"),
   snippet: z.string().describe("Snippet do resultado de busca"),
   publisher: z.string().describe("Nome do publisher (ex: 'Folha de S.Paulo', 'TechCrunch')"),
-  publishedAt: z.string().optional().describe("Data de publicação se disponível no snippet"),
-  locale: z.enum(["pt-BR", "en-US", "other"]),
+  publishedAt: z.string().nullish().describe("Data de publicação se disponível no snippet"),
+  // Haiku às vezes devolve "en", "pt", "es", "en-GB", etc. Normaliza via transform+pipe.
+  locale: z.string().transform((v) => {
+    const l = (v ?? "").toLowerCase()
+    if (l.startsWith("pt")) return "pt-BR" as const
+    if (l.startsWith("en")) return "en-US" as const
+    return "other" as const
+  }).pipe(z.enum(["pt-BR", "en-US", "other"])),
 })
 
 const DiscoveryResponseSchema = z.object({
@@ -133,7 +139,7 @@ async function runDiscoveryPhase(opts: {
   sourcesByTerm?: Record<string, string[]>
   userId: string
 }): Promise<{
-  candidates: { term: string; url: string; title: string; snippet: string; publisher: string; publishedAt?: string; locale: "pt-BR" | "en-US" | "other" }[]
+  candidates: { term: string; url: string; title: string; snippet: string; publisher: string; publishedAt?: string | null; locale: "pt-BR" | "en-US" | "other" }[]
   usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; searchesUsed: number }
 }> {
   const { terms, termIntents, sourcesByTerm = {}, userId } = opts
@@ -174,6 +180,7 @@ Use queries mais variadas: em PT tente "<termo> notícia hoje", "<termo> última
   const start = Date.now()
   let candidates: z.infer<typeof DiscoveryResponseSchema>["candidates"] = []
   let rawParsed: z.infer<typeof DiscoveryResponseSchema> | null = null
+  let lastParseError: unknown = null
 
   for (let attempt = 0; attempt < userPrompts.length; attempt++) {
     const messages: Anthropic.MessageParam[] = [{ role: "user", content: userPrompts[attempt] }]
@@ -218,11 +225,34 @@ Use queries mais variadas: em PT tente "<termo> notícia hoje", "<termo> última
     }
     if (!finalText) throw new Error("discovery: pause_turn loop exceeded")
 
-    let parsed: z.infer<typeof DiscoveryResponseSchema>
+    // Parse lenient: se falhar, tenta salvar o que der e segue. Só joga erro
+    // no fim se NENHUMA tentativa voltou algo útil.
+    let parsed: z.infer<typeof DiscoveryResponseSchema> | null = null
     try { parsed = DiscoveryResponseSchema.parse(JSON.parse(finalText)) }
     catch (err) {
-      console.error("[discovery] parse:", err, "raw:", finalText.slice(0, 300))
-      throw new Error("Falha ao parsear discovery")
+      lastParseError = err
+      console.error(`[discovery] parse attempt ${attempt + 1} falhou:`, err instanceof Error ? err.message : err, "raw:", finalText.slice(0, 500))
+      // Tenta fallback: parse array-of-unknowns + Zod safeParse por item
+      try {
+        const raw = JSON.parse(finalText) as { candidates?: unknown[] }
+        if (raw && Array.isArray(raw.candidates)) {
+          const salvaged: z.infer<typeof DiscoveryItemSchema>[] = []
+          for (const item of raw.candidates) {
+            const r = DiscoveryItemSchema.safeParse(item)
+            if (r.success) salvaged.push(r.data)
+          }
+          if (salvaged.length > 0) {
+            parsed = { candidates: salvaged }
+            console.log(`[discovery] salvou ${salvaged.length}/${raw.candidates.length} items via safeParse`)
+          }
+        }
+      } catch { /* não conseguiu nem o JSON.parse — segue pro próximo attempt */ }
+    }
+    if (!parsed) {
+      if (attempt < userPrompts.length - 1) { console.log(`[discovery] parse falhou no attempt ${attempt + 1} — tentando prompt alternativo...`); continue }
+      // Último attempt falhou — logga o que temos e retorna vazio (pipeline trata como "nenhum candidato")
+      console.error(`[discovery] TODOS os attempts falharam no parse. Último erro:`, lastParseError)
+      break
     }
     rawParsed = parsed
 
