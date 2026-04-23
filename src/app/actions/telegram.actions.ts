@@ -68,6 +68,47 @@ A partir daqui você vai receber o *digest diário* com as principais novidades 
   }
 }
 
+// Liga/desliga tema do digest. Tema continua ativo p/ geração de ideias.
+export async function toggleDigestTermAction(termId: string, include: boolean): Promise<ActionResult> {
+  try {
+    const userId = await getUserId()
+    await db.monitorTerm.update({
+      where: { id: termId, userId },
+      data: { includeInDigest: include },
+    })
+    revalidatePath("/bot")
+    return { success: true, data: { termId, includeInDigest: include } }
+  } catch (err) {
+    console.error("[toggleDigestTerm]", err)
+    return { success: false, error: err instanceof Error ? err.message : "Erro" }
+  }
+}
+
+// Lista temas ativos do user com flag includeInDigest e contagem de fontes.
+export async function getDigestTermsAction(): Promise<ActionResult> {
+  try {
+    const userId = await getUserId()
+    const terms = await db.monitorTerm.findMany({
+      where: { userId, isActive: true },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, term: true, includeInDigest: true, sources: true },
+    })
+    const data = terms.map((t) => {
+      const arr = Array.isArray(t.sources) ? (t.sources as unknown as { isActive?: boolean }[]) : []
+      const activeSources = arr.filter((s) => s?.isActive !== false).length
+      return {
+        id: t.id,
+        term: t.term,
+        includeInDigest: t.includeInDigest,
+        activeSources,
+      }
+    })
+    return { success: true, data }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Erro" }
+  }
+}
+
 // Lê status pra UI — se tem chatId e se o token do bot está OK.
 export async function getTelegramStatusAction(): Promise<ActionResult> {
   try {

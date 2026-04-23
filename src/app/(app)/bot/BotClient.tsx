@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Bell, Send, CheckCircle2, AlertCircle, ExternalLink, Copy, Loader2, Zap } from "lucide-react"
-import { saveTelegramChatIdAction, sendTelegramTestAction } from "@/app/actions/telegram.actions"
+import { Bell, Send, CheckCircle2, AlertCircle, ExternalLink, Copy, Loader2, Zap, Target } from "lucide-react"
+import { saveTelegramChatIdAction, sendTelegramTestAction, toggleDigestTermAction } from "@/app/actions/telegram.actions"
 import { cn } from "@/lib/utils"
 
 type Status = {
@@ -11,8 +11,17 @@ type Status = {
   botUsername: string | null
 }
 
-export function BotClient({ initialStatus }: { initialStatus: Status }) {
+type DigestTerm = {
+  id: string
+  term: string
+  includeInDigest: boolean
+  activeSources: number
+}
+
+export function BotClient({ initialStatus, initialTerms }: { initialStatus: Status; initialTerms: DigestTerm[] }) {
   const [status, setStatus] = useState<Status>(initialStatus)
+  const [terms, setTerms] = useState<DigestTerm[]>(initialTerms)
+  const [togglingTermId, setTogglingTermId] = useState<string | null>(null)
   const [inputChatId, setInputChatId] = useState(initialStatus.chatId ?? "")
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null)
   const [saving, startSave] = useTransition()
@@ -55,6 +64,22 @@ export function BotClient({ initialStatus }: { initialStatus: Status }) {
         setMessage({ type: "err", text: res.error ?? "Erro no teste" })
       }
     })
+  }
+
+  async function handleToggleTerm(termId: string, next: boolean) {
+    setTogglingTermId(termId)
+    // Optimistic update
+    setTerms((prev) => prev.map((t) => (t.id === termId ? { ...t, includeInDigest: next } : t)))
+    try {
+      const res = await toggleDigestTermAction(termId, next)
+      if (!res.success) {
+        // Rollback
+        setTerms((prev) => prev.map((t) => (t.id === termId ? { ...t, includeInDigest: !next } : t)))
+        setMessage({ type: "err", text: res.error ?? "Erro ao atualizar tema" })
+      }
+    } finally {
+      setTogglingTermId(null)
+    }
   }
 
   async function handleRunDigest() {
@@ -195,6 +220,84 @@ export function BotClient({ initialStatus }: { initialStatus: Status }) {
           </div>
         )}
       </div>
+
+      {/* Seleção de temas pro digest */}
+      {isBound && tokenOK && (
+        <div className="cockpit-card space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-cockpit-text flex items-center gap-2">
+              <Target size={14} className="text-accent" />
+              Temas no digest
+            </h2>
+            <p className="text-[11px] text-cockpit-muted mt-0.5">
+              Quais temas aparecem no relatório do Telegram. Desligar aqui <strong>não</strong> para o monitoramento —
+              o tema continua ativo pra geração de ideias. <a href="/temas" className="text-accent hover:underline">Gerenciar temas →</a>
+            </p>
+          </div>
+
+          {terms.length === 0 ? (
+            <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg text-xs text-amber-500">
+              Nenhum tema ativo. Adicione em <a href="/temas" className="underline">/temas</a>.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {terms.map((t) => {
+                const included = t.includeInDigest
+                const isToggling = togglingTermId === t.id
+                return (
+                  <label key={t.id}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors cursor-pointer",
+                      included
+                        ? "border-accent/30 bg-accent/5"
+                        : "border-cockpit-border bg-cockpit-bg hover:border-cockpit-text/20"
+                    )}>
+                    <input
+                      type="checkbox"
+                      checked={included}
+                      disabled={isToggling}
+                      onChange={(e) => handleToggleTerm(t.id, e.target.checked)}
+                      className="accent-accent shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className={cn("text-sm font-medium truncate", included ? "text-cockpit-text" : "text-cockpit-muted")}>
+                        {t.term}
+                      </p>
+                      <p className="text-[10px] text-cockpit-muted">
+                        {t.activeSources > 0 ? `${t.activeSources} fonte${t.activeSources === 1 ? "" : "s"} curada${t.activeSources === 1 ? "" : "s"}` : "sem fontes curadas (busca livre)"}
+                      </p>
+                    </div>
+                    {isToggling && <Loader2 size={13} className="animate-spin text-cockpit-muted shrink-0" />}
+                  </label>
+                )
+              })}
+            </div>
+          )}
+
+          {terms.length > 0 && (
+            <div className="flex items-center justify-between text-[10px] text-cockpit-muted pt-1">
+              <span>
+                <strong className="text-cockpit-text">{terms.filter((t) => t.includeInDigest).length}</strong>
+                {" / "}
+                {terms.length} temas no digest
+              </span>
+              {terms.some((t) => t.includeInDigest) && terms.some((t) => !t.includeInDigest) && (
+                <button
+                  onClick={() => {
+                    const allOn = terms.every((t) => t.includeInDigest)
+                    terms.forEach((t) => {
+                      if (t.includeInDigest !== !allOn) handleToggleTerm(t.id, !allOn)
+                    })
+                  }}
+                  className="hover:text-accent underline decoration-dotted"
+                >
+                  ligar todos
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Digest manual */}
       {isBound && tokenOK && (

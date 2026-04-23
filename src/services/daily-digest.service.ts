@@ -244,7 +244,7 @@ export async function runDailyDigestForUser(userId: string): Promise<DigestRunRe
   result.chatId = user.telegramChatId
 
   const terms = await db.monitorTerm.findMany({
-    where: { userId, isActive: true },
+    where: { userId, isActive: true, includeInDigest: true },
     orderBy: { createdAt: "asc" },
   })
 
@@ -258,7 +258,7 @@ export async function runDailyDigestForUser(userId: string): Promise<DigestRunRe
   if (termsToProcess.length === 0) {
     const msg = `📰 *Digest diário*
 
-Nenhum tema ativo com fontes curadas\\. Adicione temas em /temas\\.`
+Nenhum tema habilitado pro digest\\. Em /bot você escolhe quais temas aparecem aqui\\.`
     await sendMessage({ chatId: user.telegramChatId, text: msg })
     result.messagesSent++
     return result

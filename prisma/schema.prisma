@@ -192,6 +192,9 @@ model MonitorTerm {
   term             String
   intent           String?
   isActive         Boolean   @default(true)
+  // Controla se este tema entra no digest diário do Telegram.
+  // Separado de isActive: user pode querer gerar ideias mas não receber digest.
+  includeInDigest  Boolean   @default(true)
   sources          Json?
   sourcesUpdatedAt DateTime?
   createdAt        DateTime  @default(now())
