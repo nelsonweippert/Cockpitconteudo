@@ -51,9 +51,23 @@ interface Props {
   initialTab?: Tab
   /** Esconde o seletor de tabs quando a rota já é dedicada a uma tab. */
   hideTabs?: boolean
+  /** SSR: ideias pré-carregadas (elimina flash de loading). */
+  initialIdeas?: any[]
+  /** SSR: termos monitorados pré-carregados. */
+  initialMonitorTerms?: any[]
+  /** Esconde todo o header do ConteudoClient — útil quando a page fornece seu próprio. */
+  hideHeader?: boolean
 }
 
-export function ConteudoClient({ initialContents, areas, initialTab = "overview", hideTabs = false }: Props) {
+export function ConteudoClient({
+  initialContents,
+  areas,
+  initialTab = "overview",
+  hideTabs = false,
+  initialIdeas,
+  initialMonitorTerms,
+  hideHeader = false,
+}: Props) {
   const [contents, setContents] = useState<Content[]>(initialContents)
   const [selectedContent, setSelectedContent] = useState<Content | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -88,9 +102,9 @@ export function ConteudoClient({ initialContents, areas, initialTab = "overview"
   const [showFilters, setShowFilters] = useState(false)
 
   // Idea repository
-  const [monitorTerms, setMonitorTerms] = useState<any[]>([])
-  const [ideaFeed, setIdeaFeed] = useState<any[]>([])
-  const [ideasLoaded, setIdeasLoaded] = useState(false)
+  const [monitorTerms, setMonitorTerms] = useState<any[]>(initialMonitorTerms ?? [])
+  const [ideaFeed, setIdeaFeed] = useState<any[]>(initialIdeas ?? [])
+  const [ideasLoaded, setIdeasLoaded] = useState(Boolean(initialIdeas))
   const [newTerm, setNewTerm] = useState("")
   const [newTermIntent, setNewTermIntent] = useState("")
   const [editingIntentId, setEditingIntentId] = useState<string | null>(null)
@@ -532,16 +546,18 @@ export function ConteudoClient({ initialContents, areas, initialTab = "overview"
   return (
     <>
       <div className="max-w-6xl mx-auto space-y-5">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-cockpit-text">Conteúdo</h1>
-            <p className="text-sm text-cockpit-muted mt-1">Pipeline de produção · {counts.total} itens</p>
+        {/* Header (escondido quando a page tem header próprio) */}
+        {!hideHeader && (
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-cockpit-text">Conteúdo</h1>
+              <p className="text-sm text-cockpit-muted mt-1">Pipeline de produção · {counts.total} itens</p>
+            </div>
+            <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2.5 bg-accent text-black text-sm font-semibold rounded-xl hover:bg-accent-hover transition-colors">
+              <Plus size={16} /> Novo Conteúdo
+            </button>
           </div>
-          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2.5 bg-accent text-black text-sm font-semibold rounded-xl hover:bg-accent-hover transition-colors">
-            <Plus size={16} /> Novo Conteúdo
-          </button>
-        </div>
+        )}
 
         {/* Tabs (escondido quando rota dedicada) */}
         {!hideTabs && (
