@@ -15,24 +15,10 @@ import { db } from "@/lib/db"
 import { Prisma } from "@/generated/prisma/client"
 import { suggestSources } from "@/services/source-suggester"
 import { validateHosts } from "@/services/source-validator"
+import type { TermSource } from "@/types/source"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
-
-type TermSource = {
-  host: string
-  name: string
-  tier: "TIER_1" | "TIER_2" | "BLOG"
-  language: "pt-BR" | "en" | "es"
-  note?: string
-  isActive: boolean
-  scores?: { authority: number; specialization: number; frequency: number; independence: number; languageFit: number }
-  aggregateScore?: number
-  validationStatus?: "ok" | "site_name_mismatch" | "not_publisher" | "unreachable" | "error"
-  validationNote?: string
-  detectedSiteName?: string | null
-  lastValidatedAt?: string
-}
 
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -71,19 +57,22 @@ export async function POST(req: NextRequest) {
     }
 
     // ═══ PASSO 2: Validação HTTP paralela ═══
+    // Só valida hosts de PUBLISHER/CURATOR via validator (que procura og:site_name e acha tag "publisher").
+    // Fórum/código têm estrutura diferente e validar contra publisher daria falso positivo de rejeição.
     console.log(`[suggest] validando ${suggested.length} hosts via HTTP...`)
+    const toValidate = suggested.filter((s) => s.sourceType === "PUBLISHER" || s.sourceType === "CURATOR")
+    const skipValidation = suggested.filter((s) => s.sourceType !== "PUBLISHER" && s.sourceType !== "CURATOR")
     const validationStart = Date.now()
-    const results = await validateHosts(
-      suggested.map((s) => ({ host: s.host, expectedName: s.name })),
-      4,
-    )
+    const results = toValidate.length > 0
+      ? await validateHosts(toValidate.map((s) => ({ host: s.host, expectedName: s.name })), 4)
+      : new Map<string, { status: "ok"; notes: string; detectedSiteName?: string | null; checkedAt: string }>()
     const validationMs = Date.now() - validationStart
 
     // ═══ PASSO 3: Filtrar hallucinations + formatar ═══
     const rejected: Array<{ host: string; name: string; reason: string; detail?: string }> = []
     const validated: TermSource[] = []
 
-    for (const s of suggested) {
+    for (const s of toValidate) {
       const v = results.get(s.host)
       // Hard reject: unreachable ou not_publisher
       if (!v || v.status === "unreachable" || v.status === "not_publisher") {
@@ -98,6 +87,7 @@ export async function POST(req: NextRequest) {
       validated.push({
         host: s.host,
         name: s.name,
+        sourceType: s.sourceType,
         tier: s.tier,
         language: s.language,
         note: s.expertise,
@@ -106,6 +96,23 @@ export async function POST(req: NextRequest) {
         validationNote: v.notes,
         detectedSiteName: v.detectedSiteName ?? null,
         lastValidatedAt: v.checkedAt,
+      })
+    }
+
+    // Fórum/código entram direto sem validação (são canonicamente conhecidos)
+    for (const s of skipValidation) {
+      validated.push({
+        host: s.host,
+        name: s.name,
+        sourceType: s.sourceType,
+        tier: s.tier,
+        language: s.language,
+        note: s.expertise,
+        isActive: true,
+        validationStatus: "ok",
+        validationNote: `${s.sourceType} — validação HTTP pulada (não é publisher tradicional)`,
+        detectedSiteName: null,
+        lastValidatedAt: new Date().toISOString(),
       })
     }
 

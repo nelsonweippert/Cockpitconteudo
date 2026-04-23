@@ -1,10 +1,6 @@
-// Source Suggester — pipeline leve pra montar catálogo fixo de fontes por tema.
-// Single call Claude Sonnet, SEM tools. Usa apenas conhecimento do treinamento
-// pra listar publishers reais. Depois, source-validator.ts filtra hallucinations
-// via HTTP real.
-//
-// Trade-off: pode perder blogs super-recentes que Claude não conhece, mas ganha
-// confiabilidade e velocidade (~10s vs 2-5min).
+// Source Suggester — monta catálogo misto por tema, com quotas por sourceType.
+// Objetivo: trazer FONTES UPSTREAM (fóruns, código, curadores) ao invés de
+// só publishers tradicionais — o digest fica à frente da cobertura comum.
 
 import Anthropic from "@anthropic-ai/sdk"
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod"
@@ -14,53 +10,87 @@ import { trackUsage } from "./ai.service"
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const MODEL = "claude-sonnet-4-6"
 
+const SourceTypeEnum = z.enum(["PUBLISHER", "CURATOR", "PRIMARY_FORUM", "PRIMARY_CODE", "PRIMARY_SOCIAL"])
+
 const SuggestedSourceSchema = z.object({
-  host: z.string().describe("Domínio raiz SEM www, SEM https://, SEM path. Ex: folha.uol.com.br, stratechery.com"),
+  host: z.string().describe(
+    "Domínio raiz sem www/https. PUBLISHER/CURATOR = só o domínio (ex: folha.uol.com.br). " +
+    "PRIMARY_FORUM = pode ter path de subreddit (ex: reddit.com/r/LocalLLaMA) ou o raiz (news.ycombinator.com). " +
+    "PRIMARY_CODE = github.com/{org}/{repo} ou arxiv.org.",
+  ),
   name: z.string().describe("Nome editorial do veículo"),
+  sourceType: SourceTypeEnum.describe(
+    "PUBLISHER: mídia tradicional (TechCrunch, Folha). CURATOR: newsletter/analista (Stratechery, Import AI). " +
+    "PRIMARY_FORUM: Hacker News, subreddits específicos, Product Hunt — discussão upstream. " +
+    "PRIMARY_CODE: GitHub repos, arXiv — produto/paper nascendo. " +
+    "PRIMARY_SOCIAL: Twitter/Farcaster — só use se tiver certeza do handle canônico do tema.",
+  ),
   tier: z.enum(["TIER_1", "TIER_2", "BLOG"]).describe(
-    "TIER_1: publishers estabelecidos com equipe editorial grande. TIER_2: especializados reconhecidos no nicho. BLOG: newsletter/blog de autor individual com autoridade.",
+    "Autoridade dentro do tipo. TIER_1: canônico. TIER_2: forte mas de nicho. BLOG: autor individual ou sub-canal.",
   ),
   language: z.enum(["pt-BR", "en", "es"]),
   country: z.string().optional().describe("US, BR, UK, etc"),
   expertise: z.string().describe("1 frase explicando por que é relevante PRO TEMA específico"),
   confidence: z.enum(["high", "medium", "low"]).describe(
-    "high: fonte notória que você conhece muito bem. medium: conhece mas pode ter mudado. low: tem dúvida se existe — prefira não incluir.",
+    "high: fonte notória que você conhece muito bem. medium: conhece mas pode ter mudado. low: tem dúvida — não inclua.",
   ),
 })
 
 const ResponseSchema = z.object({
-  sources: z.array(SuggestedSourceSchema).describe("15-20 publishers curados pro tema"),
+  sources: z.array(SuggestedSourceSchema).describe("Mix de 15-20 fontes curadas pro tema, balanceadas por sourceType"),
 })
 
 export type SuggestedSource = z.infer<typeof SuggestedSourceSchema>
 
 function buildSystemPrompt(): string {
-  return `Você é CURADOR EDITORIAL SÊNIOR. Dado um tema + intenção do usuário, liste os MELHORES publishers, newsletters e blogs que você CONHECE SEM DÚVIDA cobrirem bem esse tema.
+  return `Você é CURADOR EDITORIAL SÊNIOR especializado em FLUXO DE INFORMAÇÃO: sabe onde a notícia NASCE vs onde ela é só REPRODUZIDA.
+
+OBJETIVO
+Montar catálogo MISTO por tipo de fonte pra ficar À FRENTE da cobertura comum. Quem lê publisher tá lendo o mesmo que todo mundo. Quem lê PRIMARY_FORUM/CODE tá vendo o sinal antes de virar commodity.
 
 REGRAS ABSOLUTAS
-- SÓ inclua fontes que você tem CERTEZA que existem. Se não lembra com precisão, NÃO inclua.
-- PROIBIDO inventar hosts. "Eu acho que existe um blog chamado X" → EXCLUIR.
-- Marque confidence:
-  · "high" — fonte notória/canônica, você conhece muito bem
-  · "medium" — existe mas pode ter evoluído (incluir se o tema é estável)
-  · "low" — tem dúvida → prefira não incluir
-- Host deve ser domínio raiz sem www/https/path. Valide mentalmente: "esse host vai retornar uma homepage legítima"?
+- SÓ inclua fontes que você tem CERTEZA que existem. Não inventa.
+- Host deve ser domínio raiz, exceto pra fórum/código onde path pode ser crítico:
+  · PUBLISHER/CURATOR: só "folha.uol.com.br", "stratechery.com"
+  · PRIMARY_FORUM: pode ser "news.ycombinator.com" OU "reddit.com/r/LocalLLaMA"
+  · PRIMARY_CODE: "github.com/openai/evals" (repo específico) ou "arxiv.org" com categoria implícita na nota
+- Marque confidence rigorosamente. Se não lembra com precisão, descarta.
 
-O QUE ENTREGAR
-- 15-20 fontes total (menos se for nicho pequeno; mais só se realmente conhece muitas)
-- Balance de TIERS: 4-6 TIER_1 + 6-10 TIER_2 + 3-5 BLOG
-- Balance de IDIOMAS conforme o tema:
-  · Tema com foco BR (ex: "política brasileira") → 70% pt-BR
-  · Tema internacional/frontier (ex: "LLMs") → 70% en
-  · Misto → 50/50
-- expertise: 1 frase concreta explicando por que a fonte é relevante ESPECIFICAMENTE pro tema do usuário (não genérico)
+QUOTAS DE sourceType POR TEMA (mire nesse mix)
+- PRIMARY_FORUM (2-4 fontes) — discussão original. Onde devs/analistas comentam primeiro.
+  · Tech/IA/software: news.ycombinator.com + 1-3 subreddits específicos (reddit.com/r/MachineLearning, r/LocalLLaMA, r/selfhosted, etc.)
+  · Produto/design: news.ycombinator.com + producthunt.com + r/startups
+  · Cripto: r/CryptoCurrency, r/ethfinance, farcaster.xyz
+  · Ciência: r/science, r/askscience
+  · SEMPRE: escolha subreddits CANÔNICOS do tema (se não lembrar um específico, prefira pular)
+
+- PRIMARY_CODE (0-2 fontes) — produto/paper nascendo, ONDE só existir fluxo técnico.
+  · Tech/IA: github.com/{org}/{repo-canônico} + arxiv.org (pra papers)
+  · Não existe pra política/entretenimento/geral
+
+- CURATOR (3-5 fontes) — newsletters e analistas com opinião forte.
+  · Tech/IA: stratechery.com, importai.substack.com, theneurondaily.com, lennysnewsletter.com
+  · Cripto: messari.io, bankless.substack.com
+  · Política: newsletters no substack (mapeie pelo tema)
+  · Ciência: pesquisadores com substack próprio
+
+- PUBLISHER (5-8 fontes) — mídia tradicional que SABE cobrir o tema.
+  · Internacional: TechCrunch, The Information, Bloomberg, Reuters, etc.
+  · BR: Folha, G1, Estadão, Valor, etc. quando o tema tiver relevância local
+
+- PRIMARY_SOCIAL (0-1 fontes) — só inclua se existe um HANDLE canônico que domina o tema (raro). Quase sempre pular.
+
+BALANÇO DE IDIOMAS (DENTRO DO MIX)
+- Tema BR (ex: "política brasileira") → 70% pt-BR
+- Tema frontier (ex: "LLMs") → 70% en (o sinal tá lá)
+- Misto → 50/50
 
 ANTI-PADRÕES (NUNCA incluir)
-- Agregadores (Google News, Bing News, Techmeme, Hacker News como fonte)
-- Redes sociais (Twitter/X, Reddit, LinkedIn) — são canais, não fontes
+- Agregadores como "fonte": Google News, Bing News, Techmeme, feedly (são ferramentas de descoberta, não fonte)
 - Wikipedia, Quora, Medium raiz (plataforma, não publisher)
-- Sites de e-commerce ou PR wires
-- Blogs que claramente só replicam notícias de outros sem apuração
+- E-commerce, PR wires, blogs que só replicam
+
+expertise: 1 frase concreta explicando por que a fonte é relevante ESPECIFICAMENTE pro tema.
 
 FORMATO: JSON { sources: [...] } conforme schema.`
 }
@@ -69,7 +99,7 @@ export async function suggestSources(opts: {
   term: string
   intent?: string | null
   userId: string
-  existingHosts?: string[] // hosts já no catálogo — Claude evita duplicar
+  existingHosts?: string[]
   maxSources?: number
 }): Promise<{
   sources: SuggestedSource[]
@@ -80,9 +110,16 @@ export async function suggestSources(opts: {
   const userPrompt = `TEMA: "${term}"
 ${intent ? `INTENÇÃO/FOCO: ${intent}` : "(sem intenção declarada — use julgamento padrão)"}
 ${existingHosts.length > 0 ? `\nJÁ NO CATÁLOGO (NÃO repita, sugira NOVAS):\n${existingHosts.map((h) => `- ${h}`).join("\n")}\n` : ""}
-Liste até ${maxSources} publishers/newsletters/blogs que VOCÊ CONHECE e que cobrem esse tema com qualidade.
+Liste até ${maxSources} fontes que VOCÊ CONHECE, balanceadas conforme as QUOTAS de sourceType do system prompt.
 
-Priorize confidence=high. Se ficar com menos de ${Math.floor(maxSources * 0.6)} fontes "high", inclua algumas "medium" que você considera sólidas. Evite "low".`
+Prioridade do mix PARA ESTE TEMA:
+1. PRIMARY_FORUM (HN + subreddits específicos do tema) — onde o sinal aparece primeiro
+2. CURATOR (newsletters/analistas)
+3. PUBLISHER (mídia que cobre bem)
+4. PRIMARY_CODE só se tema tiver dimensão técnica
+5. PRIMARY_SOCIAL evite
+
+Priorize confidence=high. Evite "low".`
 
   const start = Date.now()
   const response = await anthropic.messages.create({
@@ -105,15 +142,31 @@ Priorize confidence=high. Se ficar com menos de ${Math.floor(maxSources * 0.6)} 
   }
 
   // Filtra low-confidence e normaliza hosts. Dedup.
+  // Pra hosts de fórum/código, preserva path (reddit.com/r/X, github.com/org/repo).
+  // Pra publisher/curator, só o domínio raiz.
   const seen = new Set<string>()
   const sources: SuggestedSource[] = []
   for (const s of parsed.sources) {
     if (s.confidence === "low") continue
-    const host = s.host.toLowerCase().trim().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+.*$/, "")
+    const raw = s.host.toLowerCase().trim().replace(/^https?:\/\//, "").replace(/^www\./, "")
+    let host: string
+    if (s.sourceType === "PRIMARY_FORUM" || s.sourceType === "PRIMARY_CODE") {
+      // Remove trailing slash mas mantém path
+      host = raw.replace(/\/+$/, "")
+    } else {
+      // Domínio raiz
+      host = raw.replace(/\/+.*$/, "")
+    }
     if (!host || seen.has(host)) continue
     seen.add(host)
     sources.push({ ...s, host })
   }
+
+  // Counts por tipo pra log/telemetria
+  const byType = sources.reduce((acc, s) => {
+    acc[s.sourceType] = (acc[s.sourceType] ?? 0) + 1
+    return acc
+  }, {} as Record<string, number>)
 
   trackUsage(MODEL, "source_suggester", response.usage.input_tokens, response.usage.output_tokens, durationMs, userId, {
     cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
@@ -121,7 +174,7 @@ Priorize confidence=high. Se ficar com menos de ${Math.floor(maxSources * 0.6)} 
     suggested: parsed.sources.length, afterFilter: sources.length,
   }).catch(() => {})
 
-  console.log(`[suggester] term="${term}" → ${sources.length} sources (${parsed.sources.length - sources.length} dropped low-confidence) em ${durationMs}ms`)
+  console.log(`[suggester] term="${term}" → ${sources.length} sources (drop ${parsed.sources.length - sources.length}) ${durationMs}ms. Mix: ${JSON.stringify(byType)}`)
 
   return {
     sources,

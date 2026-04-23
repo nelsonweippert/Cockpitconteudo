@@ -4,33 +4,21 @@ import { useEffect, useState, useTransition } from "react"
 import { Loader2, Search, X, Plus, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { updateTermSourcesAction } from "@/app/actions/idea.actions"
+import type { TermSource } from "@/types/source"
+import { getSourceType, SOURCE_TYPE_META } from "@/types/source"
 
-export type TermSourceScores = {
-  authority: number
-  specialization: number
-  frequency: number
-  independence: number
-  languageFit: number
-}
-export type TermSource = {
-  host: string
-  name: string
-  tier: "TIER_1" | "TIER_2" | "BLOG"
-  language: "pt-BR" | "en" | "es"
-  note?: string
-  isActive: boolean
-  scores?: TermSourceScores
-  aggregateScore?: number
-  validationStatus?: "ok" | "site_name_mismatch" | "not_publisher" | "unreachable" | "error"
-  validationNote?: string
-  detectedSiteName?: string | null
-  lastValidatedAt?: string
-}
+// Re-exports pra não quebrar importações de outros módulos que pegavam daqui.
+export type { TermSource, TermSourceScores } from "@/types/source"
 
 function tierBadge(tier: TermSource["tier"]) {
   if (tier === "TIER_1") return { text: "TIER 1", cls: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" }
   if (tier === "TIER_2") return { text: "TIER 2", cls: "bg-blue-500/15 text-blue-500 border-blue-500/30" }
   return { text: "BLOG", cls: "bg-amber-500/15 text-amber-500 border-amber-500/30" }
+}
+
+function typeBadge(s: TermSource) {
+  const meta = SOURCE_TYPE_META[getSourceType(s)]
+  return { text: `${meta.emoji} ${meta.label}`, cls: meta.cls }
 }
 
 function langFlag(l: string) {
@@ -371,6 +359,7 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
         <div className="space-y-1 max-h-96 overflow-y-auto">
           {sources.map((s) => {
             const tier = tierBadge(s.tier)
+            const type = typeBadge(s)
             const scoreTone =
               s.aggregateScore == null ? "" :
               s.aggregateScore >= 8 ? "text-emerald-500" :
@@ -392,6 +381,7 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
                   )}>
                   {s.isActive && <Check size={10} strokeWidth={3} />}
                 </button>
+                <span className={cn("px-1.5 py-0.5 text-[9px] font-bold border rounded", type.cls)} title={`Tipo: ${SOURCE_TYPE_META[getSourceType(s)].label}`}>{type.text}</span>
                 <span className={cn("px-1.5 py-0.5 text-[9px] font-bold border rounded", tier.cls)}>{tier.text}</span>
                 <span className="text-[11px]">{langFlag(s.language)}</span>
                 {s.aggregateScore != null && (
