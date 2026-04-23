@@ -86,6 +86,7 @@ async function callStage<T>(url: string, body: unknown, maxAttempts = 3): Promis
 export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) {
   const [discovering, setDiscovering] = useState(false)
   const [currentStage, setCurrentStage] = useState<DiscoverStage | null>(null)
+  const [subProgress, setSubProgress] = useState<{ current: number; total: number; detail?: string } | null>(null)
   const [discoverStartedAt, setDiscoverStartedAt] = useState<number | null>(null)
   const [discoverElapsed, setDiscoverElapsed] = useState(0)
   const [lastResult, setLastResult] = useState<{ found: number; rejected: number; durationMs: number } | null>(null)
@@ -110,27 +111,60 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
     setDiscoverElapsed(0)
     setError(null)
     setLastResult(null)
+    setSubProgress(null)
     const pipelineStart = Date.now()
     try {
-      // Estágio 1: Decomposição (~15s)
+      // ═══ Estágio 1: Decomposição (~15s) ═══
       setCurrentStage("decomp")
       const { decomposition } = await callStage<{ decomposition: unknown }>(
         "/api/content/sources/discover/stage1",
         { termId },
       )
 
-      // Estágio 2: Descoberta (~40s)
+      // ═══ Estágio 2: Descoberta chunked — 1 query por call ═══
       setCurrentStage("discover")
-      const { candidates } = await callStage<{ candidates: unknown[] }>(
+
+      // 2a. Pede o plano (totalQueries + preview das queries). Leve, instantâneo.
+      const plan = await callStage<{ mode: "plan"; totalQueries: number; queries: { index: number; strategy: string; language: string; preview: string }[] }>(
         "/api/content/sources/discover/stage2",
         { termId, decomposition },
       )
 
-      // Estágio 3: Validação + ranking + persistência (~60s)
+      // 2b. Loop sequencial: cada query = 1 call <10s
+      const allCandidates: unknown[] = []
+      for (let i = 0; i < plan.totalQueries; i++) {
+        setSubProgress({ current: i + 1, total: plan.totalQueries, detail: `"${plan.queries[i].preview}"` })
+        try {
+          const res = await callStage<{ mode: "query"; candidates: unknown[]; queryIndex: number; totalQueries: number }>(
+            "/api/content/sources/discover/stage2",
+            { termId, decomposition, queryIndex: i },
+          )
+          allCandidates.push(...res.candidates)
+        } catch (queryErr) {
+          // Falhou uma query específica depois dos retries. Continua as outras.
+          console.warn(`[stage2] query ${i + 1}/${plan.totalQueries} falhou definitivamente — continuando:`, queryErr)
+        }
+      }
+      setSubProgress(null)
+
+      // Dedup agregado cliente-side (hosts podem aparecer em múltiplas queries)
+      const seenHosts = new Set<string>()
+      const dedupedCandidates = allCandidates.filter((c) => {
+        const host = (c as { host?: string }).host
+        if (!host || seenHosts.has(host)) return false
+        seenHosts.add(host)
+        return true
+      })
+
+      if (dedupedCandidates.length === 0) {
+        throw new Error("Nenhum candidato encontrado em nenhuma query. Pipeline sem material pra validar.")
+      }
+
+      // ═══ Estágio 3: Validação + ranking + persistência (~60s) ═══
       setCurrentStage("validate")
       const stage3 = await callStage<{ sources: TermSource[]; found: number; rejected: unknown[] }>(
         "/api/content/sources/discover/stage3",
-        { termId, decomposition, candidates },
+        { termId, decomposition, candidates: dedupedCandidates },
       )
 
       onSourcesChange(stage3.sources)
@@ -145,6 +179,7 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
       setDiscovering(false)
       setDiscoverStartedAt(null)
       setCurrentStage(null)
+      setSubProgress(null)
     }
   }
 
@@ -212,10 +247,12 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
       {discovering && currentStage && (() => {
         const stages: { id: DiscoverStage; label: string; detail: string }[] = [
           { id: "decomp", label: "Decompondo tema", detail: "subtemas, jargão, perfis-alvo, queries planejadas (~15s)" },
-          { id: "discover", label: "Descoberta multi-estratégia", detail: "executando 6-10 queries web_search (~40s)" },
-          { id: "validate", label: "Validação + ranking", detail: "site: por candidato, score em 5 dimensões (~60s)" },
+          { id: "discover", label: "Descoberta multi-query", detail: "1 web_search por query, acumulando candidatos" },
+          { id: "validate", label: "Validação + ranking", detail: "site: por candidato + HTTP validation (~75s)" },
         ]
         const effectiveIdx = stages.findIndex((s) => s.id === currentStage)
+        const hasSubProgress = currentStage === "discover" && subProgress
+
         return (
           <div className="p-3 bg-cockpit-bg border border-accent/20 rounded-lg space-y-2">
             <div className="flex items-center justify-between">
@@ -223,21 +260,39 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
                 <Loader2 size={12} className="animate-spin text-accent" />
                 <span className="text-[11px] font-semibold text-cockpit-text">
                   Estágio {effectiveIdx + 1}/3 · {stages[effectiveIdx].label}
+                  {hasSubProgress && (
+                    <span className="ml-2 text-cockpit-muted font-normal">
+                      query {subProgress!.current}/{subProgress!.total}
+                    </span>
+                  )}
                 </span>
               </div>
               <span className="text-[11px] text-cockpit-muted tabular-nums">{discoverElapsed}s</span>
             </div>
-            <p className="text-[10px] text-cockpit-muted">{stages[effectiveIdx].detail}</p>
+            <p className="text-[10px] text-cockpit-muted truncate">
+              {hasSubProgress ? subProgress!.detail : stages[effectiveIdx].detail}
+            </p>
             <div className="flex items-center gap-1">
               {stages.map((s, i) => {
                 const done = i < effectiveIdx
                 const current = i === effectiveIdx
+                // Sub-progresso preenche a barra do estágio atual proporcionalmente
+                const width = done
+                  ? "100%"
+                  : current && hasSubProgress
+                  ? `${(subProgress!.current / subProgress!.total) * 100}%`
+                  : current
+                  ? "50%"
+                  : "0%"
                 return (
                   <div key={s.id} className="flex-1 h-1 bg-cockpit-border-light rounded-full overflow-hidden">
-                    <div className={cn(
-                      "h-full rounded-full transition-all duration-500",
-                      done ? "bg-emerald-500 w-full" : current ? "bg-accent w-1/2 animate-pulse" : "w-0"
-                    )} />
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        done ? "bg-emerald-500" : current ? "bg-accent animate-pulse" : ""
+                      )}
+                      style={{ width }}
+                    />
                   </div>
                 )
               })}

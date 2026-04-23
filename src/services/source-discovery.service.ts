@@ -290,52 +290,76 @@ ANTI-PADRÕES (descartar imediatamente)
 FORMATO: JSON { candidates: [...] } conforme schema.`
 }
 
+// Retorna as queries priorizadas (até `maxQueries`) do stage 1.
+// Exportado pra o route handler poder informar o cliente quantas queries existem.
+export function getPrioritizedQueries(decomposition: z.infer<typeof DecompositionSchema>, maxQueries = 5): z.infer<typeof DecompositionSchema>["queries"] {
+  return prioritizeQueries(decomposition.queries, maxQueries)
+}
+
 export async function stageDiscovery(opts: {
   term: string
   intent?: string | null
   decomposition: z.infer<typeof DecompositionSchema>
   userId: string
-}): Promise<z.infer<typeof DiscoveryResponseSchema> & { _usage: { input: number; output: number; cacheRead: number; cacheCreation: number; searchesUsed: number; durationMs: number } }> {
-  const { term, intent, decomposition, userId } = opts
+  /**
+   * Quando fornecido, executa APENAS essa query específica (1 web_search).
+   * Permite que o cliente orqueste um loop de chamadas leves (<10s cada),
+   * evitando timeout cumulativo em gateways agressivos (Cloudflare, Vercel Hobby).
+   */
+  queryIndex?: number
+  /** Limite superior de queries consideradas. Default 5. */
+  maxQueries?: number
+}): Promise<z.infer<typeof DiscoveryResponseSchema> & { _usage: { input: number; output: number; cacheRead: number; cacheCreation: number; searchesUsed: number; durationMs: number }; totalQueries: number }> {
+  const { term, intent, decomposition, userId, queryIndex, maxQueries = 5 } = opts
 
-  // Prioriza as queries mais valiosas: diferentes strategies + mix de idiomas.
-  // Limita a 4 pra evitar timeout de 504 em proxies que cortam em 25-60s.
-  const prioritizedQueries = prioritizeQueries(decomposition.queries, 4)
+  const prioritized = prioritizeQueries(decomposition.queries, maxQueries)
+  const totalQueries = prioritized.length
+
+  // Se queryIndex fornecido, executa só 1 query. Senão, executa todas (legado).
+  const queriesToRun = queryIndex !== undefined
+    ? [prioritized[queryIndex]].filter(Boolean)
+    : prioritized
+
+  if (queriesToRun.length === 0) {
+    return {
+      candidates: [],
+      _usage: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, searchesUsed: 0, durationMs: 0 },
+      totalQueries,
+    }
+  }
 
   const userPrompt = `TEMA: "${term}"
 ${intent ? `INTENÇÃO: ${intent}` : ""}
 
-PERFIS ALVO:
+PERFIL ALVO (resumo):
 - TIER_1: ${decomposition.perfis_alvo.tier_1}
 - TIER_2: ${decomposition.perfis_alvo.tier_2}
 - BLOG: ${decomposition.perfis_alvo.blog}
 
-ANTI-PADRÕES A EVITAR:
-${decomposition.anti_padroes.slice(0, 5).map((a) => `- ${a}`).join("\n")}
+${queryIndex !== undefined ? `QUERY (${queryIndex + 1}/${totalQueries}):` : `QUERIES (${queriesToRun.length}):`}
+${queriesToRun.map((q, i) => `[${i + 1}] (${q.strategy}/${q.language}) "${q.query}"`).join("\n")}
 
-QUERIES PRIORITÁRIAS (${prioritizedQueries.length}):
-${prioritizedQueries.map((q, i) => `[${i + 1}] (${q.strategy}/${q.language}) "${q.query}"`).join("\n")}
-
-Execute TODAS as queries acima. Agregue candidatos com foundVia. Alvo 12-25 candidatos. Se chegar a 20+, pare.`
+Execute ${queriesToRun.length === 1 ? "essa query" : "todas as queries"} via web_search. Agregue candidatos (host, name, tier preliminar, language, foundVia, snippet). Mínimo 3, máximo 20.`
 
   const start = Date.now()
-  console.log(`[stage2] iniciando — term="${term}" queries=${prioritizedQueries.length}`)
+  const label = queryIndex !== undefined ? `stage2[${queryIndex + 1}/${totalQueries}]` : "stage2[all]"
+  console.log(`[${label}] iniciando — term="${term}"`)
   const { text, usage } = await runWithPauseTurn({
     systemPrompt: buildDiscoverySystemPrompt(),
     userPrompt,
-    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 4 } as Anthropic.MessageCreateParams["tools"] extends (infer U)[] ? U : never] as Anthropic.MessageCreateParams["tools"],
+    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: queriesToRun.length + 1 } as Anthropic.MessageCreateParams["tools"] extends (infer U)[] ? U : never] as Anthropic.MessageCreateParams["tools"],
     effort: "low",
-    maxTokens: 4000,
+    maxTokens: 3000,
     outputSchema: DiscoveryResponseSchema,
     maxRounds: 3,
   })
-  console.log(`[stage2] anthropic returned — searchesUsed=${usage.searchesUsed} inputTokens=${usage.input} outputTokens=${usage.output}`)
   const durationMs = Date.now() - start
+  console.log(`[${label}] OK — ${durationMs}ms · searches=${usage.searchesUsed} · in=${usage.input} out=${usage.output}`)
 
   let parsed: z.infer<typeof DiscoveryResponseSchema>
   try { parsed = DiscoveryResponseSchema.parse(JSON.parse(text)) }
   catch (err) {
-    console.error("[stage2] parse:", err, "raw:", text.slice(0, 400))
+    console.error(`[${label}] parse error:`, err, "raw:", text.slice(0, 400))
     throw new Error("Falha ao parsear descoberta")
   }
 
@@ -349,12 +373,12 @@ Execute TODAS as queries acima. Agregue candidatos com foundVia. Alvo 12-25 cand
     dedupedCandidates.push({ ...c, host })
   }
 
-  trackUsage(MODEL, "source_discovery_stage2", usage.input, usage.output, durationMs, userId, {
+  trackUsage(MODEL, `source_discovery_stage2${queryIndex !== undefined ? `_q${queryIndex}` : "_bulk"}`, usage.input, usage.output, durationMs, userId, {
     cacheReadTokens: usage.cacheRead, cacheCreationTokens: usage.cacheCreation,
     searchesUsed: usage.searchesUsed, candidatesRaw: parsed.candidates.length, candidatesDeduped: dedupedCandidates.length,
   }).catch(() => {})
 
-  return { ...parsed, candidates: dedupedCandidates, _usage: { ...usage, durationMs } }
+  return { ...parsed, candidates: dedupedCandidates, _usage: { ...usage, durationMs }, totalQueries }
 }
 
 // ── Stage 3: Validação + Ranking ────────────────────────────────────────
