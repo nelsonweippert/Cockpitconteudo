@@ -71,6 +71,57 @@ const REDIRECT_DOMAINS = [
   "lnkd.in",
 ]
 
+// Hosts que bloqueiam o user-agent do Claude (anthropic-web-search). Quando vem
+// em allowed_domains, a API devolve 400. Mantemos uma lista seed + vamos
+// persistindo conforme a API nos informar. Pré-filtro evita ida à API.
+const ANTHROPIC_BLOCKED_HOSTS = new Set<string>([
+  "theverge.com",
+  "wired.com",
+])
+
+// Parse do erro 400 da API: extrai hosts listados em "['x.com', 'y.com']".
+function parseBlockedDomains(errMsg: string): string[] {
+  const m = errMsg.match(/not accessible to our user agent:\s*\[([^\]]+)\]/i)
+  if (!m) return []
+  return m[1]
+    .split(",")
+    .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
+    .filter(Boolean)
+}
+
+// Persiste hosts bloqueados em todas as MonitorTerms do user que usavam eles.
+// Desativa automaticamente (isActive=false) e marca anthropicBlocked=true.
+async function persistBlockedHosts(userId: string, hosts: string[]): Promise<void> {
+  try {
+    const terms = await db.monitorTerm.findMany({
+      where: { userId },
+      select: { id: true, sources: true },
+    })
+    const hostSet = new Set(hosts)
+    for (const t of terms) {
+      const arr = Array.isArray(t.sources) ? (t.sources as unknown as Record<string, unknown>[]) : []
+      let dirty = false
+      for (const s of arr) {
+        if (s && typeof s === "object" && typeof s.host === "string" && hostSet.has(s.host as string)) {
+          s.anthropicBlocked = true
+          s.isActive = false
+          dirty = true
+        }
+      }
+      if (dirty) {
+        await db.monitorTerm.update({
+          where: { id: t.id },
+          data: { sources: arr as unknown as Prisma.InputJsonValue },
+        })
+      }
+    }
+    // Adiciona em memória (próximos runs no mesmo processo já pré-filtram)
+    for (const h of hosts) ANTHROPIC_BLOCKED_HOSTS.add(h)
+  } catch (err) {
+    console.error("[persistBlockedHosts]", err)
+  }
+}
+
 // Parse string de data → Date válido ou null. Claude às vezes retorna "recently",
 // "", "N/A", etc. `new Date(x)` nessas retorna Invalid Date que depois explode em
 // `.toISOString()` ou no Prisma com "Invalid time value".
@@ -151,9 +202,18 @@ export async function runDiscoveryPhase(opts: {
       Object.entries(termIntents).map(([t, i]) => `- "${t}": ${i}`).join("\n")
     : ""
 
-  // União das fontes de todos os termos passados — vira allowed_domains
-  const allAllowedDomains = Array.from(new Set(terms.flatMap((t) => sourcesByTerm[t] ?? [])))
-  const hasCuratedSources = allAllowedDomains.length > 0
+  // União das fontes de todos os termos passados — vira allowed_domains.
+  // Pré-filtra hosts que sabemos que a API do Claude não consegue acessar
+  // (lista ANTHROPIC_BLOCKED_HOSTS) — evita 400 imediato.
+  const rawAllowed = Array.from(new Set(terms.flatMap((t) => sourcesByTerm[t] ?? [])))
+  const prefiltered = rawAllowed.filter((d) => ANTHROPIC_BLOCKED_HOSTS.has(d))
+  if (prefiltered.length > 0) {
+    console.log(`[discovery] pré-filtro: ${prefiltered.length} hosts bloqueados removidos do allowed_domains (${prefiltered.join(", ")})`)
+  }
+  let currentAllowedDomains = rawAllowed.filter((d) => !ANTHROPIC_BLOCKED_HOSTS.has(d))
+  const hasCuratedSources = currentAllowedDomains.length > 0 || rawAllowed.length > 0
+  // Mantido: se tinha curadoria mas pré-filtro zerou, ainda trata como "tinha fontes" (ajusta prompt),
+  // mas cai em fallback blocked_domains no searchTool.
   const sourcesHint = hasCuratedSources
     ? `\nFONTES CURADAS (só busque nessas):\n${terms.map((t) => {
         const s = sourcesByTerm[t] ?? []
@@ -189,25 +249,52 @@ Use queries mais variadas: em PT tente "<termo> notícia hoje", "<termo> última
 
     for (let i = 0; i < 4; i++) {
       // Quando há fontes curadas, usa allowed_domains (restringe). Caso contrário, usa blocked_domains (busca livre excluindo lixo).
-      const searchTool: Record<string, unknown> = {
-        type: "web_search_20260209",
-        name: "web_search",
-        max_uses: Math.max(4, terms.length * 2),
-        allowed_callers: ["direct"],
+      const buildSearchTool = (): Record<string, unknown> => {
+        const st: Record<string, unknown> = {
+          type: "web_search_20260209",
+          name: "web_search",
+          max_uses: Math.max(4, terms.length * 2),
+          allowed_callers: ["direct"],
+        }
+        if (currentAllowedDomains.length > 0) {
+          st.allowed_domains = currentAllowedDomains
+        } else {
+          st.blocked_domains = [...BLOCKED_DOMAINS, ...REDIRECT_DOMAINS]
+        }
+        return st
       }
-      if (hasCuratedSources) {
-        searchTool.allowed_domains = allAllowedDomains
-      } else {
-        searchTool.blocked_domains = [...BLOCKED_DOMAINS, ...REDIRECT_DOMAINS]
+
+      // Tenta a API; se vier 400 "domains not accessible", remove os hosts
+      // bloqueados e re-tenta (até 3x). Persiste async pra evitar repetir.
+      let response: Awaited<ReturnType<typeof anthropic.messages.create>> | null = null
+      for (let blockedRetry = 0; blockedRetry < 4; blockedRetry++) {
+        try {
+          response = await anthropic.messages.create({
+            model: DISCOVERY_MODEL,
+            max_tokens: 6000,
+            system: [{ type: "text", text: buildDiscoverySystemPrompt(), cache_control: { type: "ephemeral" } }],
+            output_config: { format: zodOutputFormat(DiscoveryResponseSchema) },
+            tools: [buildSearchTool() as any],
+            messages,
+          })
+          break
+        } catch (err) {
+          const status = (err as { status?: number })?.status
+          const msg = err instanceof Error ? err.message : String(err)
+          if (status === 400) {
+            const newlyBlocked = parseBlockedDomains(msg)
+            if (newlyBlocked.length > 0) {
+              console.warn(`[discovery] API bloqueou ${newlyBlocked.length} hosts: ${newlyBlocked.join(", ")} — filtrando e retry`)
+              currentAllowedDomains = currentAllowedDomains.filter((d) => !newlyBlocked.includes(d))
+              persistBlockedHosts(userId, newlyBlocked).catch(() => {})
+              continue
+            }
+          }
+          throw err
+        }
       }
-      const response = await anthropic.messages.create({
-        model: DISCOVERY_MODEL,
-        max_tokens: 6000,
-        system: [{ type: "text", text: buildDiscoverySystemPrompt(), cache_control: { type: "ephemeral" } }],
-        output_config: { format: zodOutputFormat(DiscoveryResponseSchema) },
-        tools: [searchTool as any],
-        messages,
-      })
+      if (!response) throw new Error("discovery: falha após retries de blocked_domains")
+
       totals.input += response.usage.input_tokens
       totals.output += response.usage.output_tokens
       totals.cacheRead += response.usage.cache_read_input_tokens ?? 0
