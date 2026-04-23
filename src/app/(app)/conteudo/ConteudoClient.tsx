@@ -119,7 +119,6 @@ export function ConteudoClient({
   const [manualTitle, setManualTitle] = useState("")
   const [manualStory, setManualStory] = useState("")
   const [manualLoading, setManualLoading] = useState(false)
-  const [manageTermsOpen, setManageTermsOpen] = useState(false)
   // Tracker do estágio do pipeline (client-side, baseado em tempo elapsed)
   const [pipelineStartedAt, setPipelineStartedAt] = useState<number | null>(null)
   const [pipelineElapsed, setPipelineElapsed] = useState(0)
@@ -777,10 +776,9 @@ export function ConteudoClient({
                     <span className="text-xs text-cockpit-muted">
                       <span className="text-base font-bold text-cockpit-text">{monitorTerms.filter((t: any) => t.isActive).length}</span> termo{monitorTerms.filter((t: any) => t.isActive).length === 1 ? "" : "s"} ativo{monitorTerms.filter((t: any) => t.isActive).length === 1 ? "" : "s"}
                     </span>
-                    <button onClick={() => setManageTermsOpen((v) => !v)}
-                      className="text-[11px] text-cockpit-muted hover:text-accent underline decoration-dotted underline-offset-2">
-                      {manageTermsOpen ? "fechar" : "gerenciar"}
-                    </button>
+                    <a href="/temas" className="text-[11px] text-cockpit-muted hover:text-accent underline decoration-dotted underline-offset-2">
+                      gerenciar →
+                    </a>
                   </div>
                   {/* Status de curadoria de fontes */}
                   {(() => {
@@ -843,80 +841,6 @@ export function ConteudoClient({
                 </button>
               </div>
             </div>
-
-            {/* ═══ GERENCIAR TERMOS MONITORADOS (collapsible) ═══ */}
-            {manageTermsOpen && (
-              <div className="cockpit-card space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-semibold text-cockpit-text uppercase tracking-wider">Termos monitorados</h4>
-                    <p className="text-[10px] text-cockpit-muted">O sistema pesquisa esses termos diariamente às 8h. Foco/exclusões ajudam a descartar matérias fora do tema.</p>
-                  </div>
-                  <a href="/conteudo/radar" className="text-[11px] text-cockpit-muted hover:text-accent hover:underline flex-shrink-0">📡 Ver radar</a>
-                </div>
-                <div className="space-y-2">
-                  {monitorTerms.map((t: any) => (
-                    <div key={t.id} className="border border-cockpit-border rounded-xl p-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold", t.isActive ? "bg-accent/10 text-accent" : "bg-cockpit-border-light text-cockpit-muted line-through")}>
-                          {t.term}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => startEditIntent(t.id, t.intent)} className="p-1 text-cockpit-muted hover:text-accent rounded" title="Editar foco/exclusões">
-                            <Edit2 size={12} />
-                          </button>
-                          <button onClick={() => handleDeleteTerm(t.id)} className="p-1 text-cockpit-muted hover:text-red-400 rounded" title="Remover">
-                            <X size={12} />
-                          </button>
-                        </div>
-                      </div>
-                      {editingIntentId === t.id ? (
-                        <div className="mt-2 space-y-1.5">
-                          <textarea value={editingIntentText} onChange={(e) => setEditingIntentText(e.target.value)} rows={3}
-                            placeholder='Ex: foco em Anthropic, OpenAI, APIs de LLM. EXCLUIR: IA em animais, arte'
-                            className="w-full px-2 py-1.5 bg-cockpit-bg border border-accent/40 rounded-lg text-xs text-cockpit-text placeholder:text-cockpit-muted focus:outline-none focus:ring-1 focus:ring-accent/30" />
-                          <div className="flex gap-1.5">
-                            <button onClick={saveIntent} className="px-2.5 py-1 bg-accent text-black text-[11px] font-semibold rounded-lg hover:bg-accent-hover">Salvar</button>
-                            <button onClick={() => setEditingIntentId(null)} className="px-2.5 py-1 text-[11px] text-cockpit-muted border border-cockpit-border rounded-lg hover:text-cockpit-text">Cancelar</button>
-                          </div>
-                        </div>
-                      ) : t.intent ? (
-                        <p className="text-[11px] text-cockpit-muted mt-1.5 leading-snug">🎯 {t.intent}</p>
-                      ) : (
-                        <button onClick={() => startEditIntent(t.id, null)} className="text-[11px] text-cockpit-muted hover:text-accent mt-1 italic">
-                          + adicionar foco (recomendado)
-                        </button>
-                      )}
-
-                      {/* Gerenciamento de fontes curadas */}
-                      <TermSourcesManager
-                        termId={t.id}
-                        sources={Array.isArray(t.sources) ? (t.sources as TermSource[]) : []}
-                        onSourcesChange={(newSources) => {
-                          setMonitorTerms((prev: any[]) => prev.map((mt) => mt.id === t.id ? { ...mt, sources: newSources } : mt))
-                        }}
-                      />
-                    </div>
-                  ))}
-                  {monitorTerms.length === 0 && <p className="text-xs text-cockpit-muted">Nenhum termo ainda. Adicione abaixo.</p>}
-                </div>
-                <div className="space-y-1.5 pt-1">
-                  <div className="flex items-center gap-2">
-                    <input type="text" value={newTerm} onChange={(e) => setNewTerm(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) handleAddTerm() }}
-                      placeholder="Ex: inteligência artificial, crypto..."
-                      className="flex-1 px-3 py-2 bg-cockpit-bg border border-cockpit-border rounded-xl text-sm text-cockpit-text placeholder:text-cockpit-muted focus:outline-none focus:ring-1 focus:ring-accent/30" />
-                    <button onClick={handleAddTerm} disabled={!newTerm.trim()}
-                      className="px-3 py-2 bg-accent text-black text-xs font-semibold rounded-xl hover:bg-accent-hover disabled:opacity-50">
-                      <Plus size={14} />
-                    </button>
-                  </div>
-                  <textarea value={newTermIntent} onChange={(e) => setNewTermIntent(e.target.value)} rows={2}
-                    placeholder='Foco/exclusões (opcional). Ex: "foco em Anthropic, OpenAI. EXCLUIR: IA em animais"'
-                    className="w-full px-3 py-1.5 bg-cockpit-bg border border-cockpit-border rounded-xl text-xs text-cockpit-text placeholder:text-cockpit-muted focus:outline-none focus:ring-1 focus:ring-accent/30" />
-                </div>
-              </div>
-            )}
 
             {/* Filters — only monitored terms + "Outros" */}
             {visibleIdeaFeed.length > 0 && (() => {

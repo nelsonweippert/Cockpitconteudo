@@ -21,6 +21,10 @@ export type TermSource = {
   isActive: boolean
   scores?: TermSourceScores
   aggregateScore?: number
+  validationStatus?: "ok" | "site_name_mismatch" | "not_publisher" | "unreachable" | "error"
+  validationNote?: string
+  detectedSiteName?: string | null
+  lastValidatedAt?: string
 }
 
 function tierBadge(tier: TermSource["tier"]) {
@@ -253,6 +257,19 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
                 {s.aggregateScore != null && (
                   <span title={scoresTooltip} className={cn("text-[10px] font-bold tabular-nums shrink-0 cursor-help", scoreTone)}>
                     {s.aggregateScore.toFixed(1)}
+                  </span>
+                )}
+                {/* Badge de validação HTTP */}
+                {s.validationStatus && (
+                  <span
+                    title={`${s.validationStatus === "ok" ? "Validada: site ativo e é publisher real" : `Atenção: ${s.validationNote ?? s.validationStatus}`}${s.lastValidatedAt ? ` · ${new Date(s.lastValidatedAt).toLocaleDateString("pt-BR")}` : ""}`}
+                    className={cn(
+                      "text-[9px] font-semibold px-1 py-0.5 rounded shrink-0 cursor-help",
+                      s.validationStatus === "ok" ? "bg-emerald-500/10 text-emerald-500" :
+                      s.validationStatus === "site_name_mismatch" ? "bg-amber-500/10 text-amber-500" :
+                      "bg-red-500/10 text-red-500"
+                    )}>
+                    {s.validationStatus === "ok" ? "✓" : s.validationStatus === "site_name_mismatch" ? "!" : "✗"}
                   </span>
                 )}
                 <div className="flex-1 min-w-0">

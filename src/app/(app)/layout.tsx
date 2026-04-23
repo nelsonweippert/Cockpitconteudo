@@ -6,12 +6,13 @@ import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
 import {
   Sun, Sunset, Moon, Menu, X, ChevronRight, LogOut, Layers,
-  BarChart3, Lightbulb, Workflow, BookOpen, Radar, Activity,
+  BarChart3, Target, Lightbulb, Workflow, BookOpen, Radar, Activity,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
   { label: "Visão Geral", href: "/visao-geral", icon: BarChart3 },
+  { label: "Temas", href: "/temas", icon: Target },
   { label: "Ideias", href: "/ideias", icon: Lightbulb },
   { label: "Funil", href: "/funil", icon: Workflow },
   { label: "Skills", href: "/skills", icon: BookOpen },

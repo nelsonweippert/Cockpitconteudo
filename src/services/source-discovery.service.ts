@@ -93,6 +93,11 @@ export type TermSource = {
     languageFit: number
   }
   aggregateScore?: number
+  // Validação HTTP server-side (após stage 3)
+  validationStatus?: "ok" | "site_name_mismatch" | "not_publisher" | "unreachable" | "error"
+  validationNote?: string
+  detectedSiteName?: string | null
+  lastValidatedAt?: string
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -188,6 +193,12 @@ REGRAS
 - Queries devem ser ESPECÍFICAS, não "<tema> best sites" genérico.
 - Use jargão técnico nas queries quando apropriado (aumenta precisão).
 - Diversifique estratégias — não concentre em authority + recent_coverage só.
+
+CETICISMO OBRIGATÓRIO
+- Prefira QUALIDADE > quantidade. Melhor 8 fontes excelentes que 15 medianas.
+- Se não está seguro que uma fonte é boa, NÃO sugira queries que vão trazê-la.
+- Anti-padrões: seja implacável. Liste todos os tipos de lixo que o usuário pode odiar.
+- Público brasileiro sobre tema técnico internacional → mix 30% PT-BR (contexto local) + 70% EN (frontier).
 
 FORMATO: JSON conforme schema.`
 }
@@ -353,6 +364,13 @@ REGRAS FINAIS
 - note: 1 frase objetiva sobre por que a fonte é valiosa PRO TEMA específico.
 - validationEvidence: string concreta do que viu no site:, tipo "site:<host> <tema> retornou 12 posts, 5 nos últimos 14 dias".
 
+CETICISMO RIGOROSO
+- NUNCA inclua um host que você "acha" que existe. Se o web_search não confirmou, REJECT("hallucination").
+- Requisito mínimo de posts recentes: 3+ nos últimos 60 dias. Se menos, REJECT("inactive").
+- Se o host é parte de um grupo maior (ex: globo.com), confirme que a URL vai pra SEÇÃO específica do tema, não pro domínio raiz. Se for raiz, REJECT("low_authority") — não é fonte dedicada.
+- Wikipedia, Reddit raiz, Quora, Twitter, Medium raiz → SEMPRE REJECT("low_authority").
+- Se o publisher é conhecido mas a cobertura desse tema específico é fraca (só 1-2 posts genéricos), REJECT("off_topic").
+
 FORMATO: JSON { sources: [...], rejected: [...] } conforme schema.`
 }
 
@@ -440,23 +458,52 @@ export async function discoverSourcesForTerm(opts: {
   const rank = await stageRanking({ term, intent, candidates: disc.candidates, decomposition: decomp, userId })
   console.log(`[source-discovery] stage3 OK em ${rank._usage.durationMs}ms: ${rank.sources.length} aprovadas, ${rank.rejected.length} rejeitadas, ${rank._usage.searchesUsed} searches`)
 
+  // Stage 4 (novo) — Validação HTTP server-side: pega hosts mortos, hallucinations,
+  // not-publishers que passaram nos site: do stage 3.
+  console.log(`[source-discovery] stage4 (validação HTTP) começando...`)
+  const validationStart = Date.now()
+  const { validateHosts } = await import("./source-validator")
+  const results = await validateHosts(
+    rank.sources.map((s) => ({ host: s.host, expectedName: s.name })),
+    4,
+  )
+  const validationMs = Date.now() - validationStart
+  const allRejected = [...rank.rejected.map((r) => ({ host: r.host, reason: r.reason, detail: r.detail }))]
+
+  const validatedSources: TermSource[] = []
+  for (const s of rank.sources) {
+    const v = results.get(s.host)
+    if (!v || v.status === "unreachable" || v.status === "not_publisher") {
+      // Hard reject: host não responde ou não parece publisher
+      allRejected.push({
+        host: s.host,
+        reason: v?.status === "unreachable" ? "inactive" : v?.status === "not_publisher" ? "low_authority" : "inactive",
+        detail: v?.notes ?? "falha na validação HTTP",
+      })
+      continue
+    }
+    validatedSources.push({
+      host: s.host,
+      name: s.name,
+      tier: s.tier,
+      language: s.language,
+      note: s.note,
+      isActive: true,
+      scores: s.scores,
+      aggregateScore: s.aggregateScore,
+      validationStatus: v.status,
+      validationNote: v.notes,
+      detectedSiteName: v.detectedSiteName ?? null,
+      lastValidatedAt: v.checkedAt,
+    })
+  }
+  console.log(`[source-discovery] stage4 OK em ${validationMs}ms: ${validatedSources.length} passaram, ${rank.sources.length - validatedSources.length} rejeitadas na validação HTTP`)
+
   const totalDurationMs = Date.now() - pipelineStart
 
-  // Converte pro formato de persistência
-  const sources: TermSource[] = rank.sources.map((s) => ({
-    host: s.host,
-    name: s.name,
-    tier: s.tier,
-    language: s.language,
-    note: s.note,
-    isActive: true,
-    scores: s.scores,
-    aggregateScore: s.aggregateScore,
-  }))
-
   return {
-    sources,
-    rejected: rank.rejected.map((r) => ({ host: r.host, reason: r.reason, detail: r.detail })),
+    sources: validatedSources,
+    rejected: allRejected,
     decomposition: decomp,
     usage: {
       inputTokens: decomp._usage.input + disc._usage.input + rank._usage.input,
@@ -467,6 +514,7 @@ export async function discoverSourcesForTerm(opts: {
         stage1: decomp._usage.durationMs,
         stage2: disc._usage.durationMs,
         stage3: rank._usage.durationMs,
+        stage4_validation: validationMs,
       },
     },
   }
