@@ -43,7 +43,7 @@ interface Props {
   onSourcesChange: (sources: TermSource[]) => void
 }
 
-type DiscoverStage = "decomp" | "discover" | "validate"
+type DiscoverStage = "suggest" | "decomp" | "discover" | "validate"
 
 async function callStageOnce<T>(url: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; status: number; error: string }> {
   try {
@@ -105,6 +105,43 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
     return () => clearInterval(interval)
   }, [discoverStartedAt])
 
+  // Montar catálogo — rápido (~20s), sem web_search. Padrão primário.
+  async function handleSuggest() {
+    setDiscovering(true)
+    setDiscoverStartedAt(Date.now())
+    setDiscoverElapsed(0)
+    setError(null)
+    setLastResult(null)
+    setSubProgress(null)
+    setCurrentStage("suggest")
+    try {
+      const res = await callStage<{
+        sources: TermSource[]
+        meta: {
+          suggested: number
+          validated: number
+          rejected: Array<{ host: string; name: string; reason: string }>
+          addedCount: number
+          totalDurationMs: number
+        }
+      }>("/api/content/sources/suggest", { termId })
+
+      onSourcesChange(res.sources)
+      setLastResult({
+        found: res.meta.addedCount,
+        rejected: res.meta.rejected.length,
+        durationMs: res.meta.totalDurationMs,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao montar catálogo")
+    } finally {
+      setDiscovering(false)
+      setDiscoverStartedAt(null)
+      setCurrentStage(null)
+    }
+  }
+
+  // Modo expandido — pipeline antigo de 3 estágios com web_search (lento, pode falhar).
   async function handleDiscover() {
     setDiscovering(true)
     setDiscoverStartedAt(Date.now())
@@ -230,10 +267,13 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
             <span className="italic">Sem fontes curadas — pesquisa usa Google News RSS</span>
           )}
         </div>
-        <button onClick={handleDiscover} disabled={discovering}
-          className="flex items-center gap-1 px-2.5 py-1 bg-accent/10 text-accent text-[11px] font-semibold border border-accent/20 rounded-lg hover:bg-accent/20 disabled:opacity-50 transition-colors">
-          {discovering ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />}
-          {discovering ? "Pesquisando..." : sources.length > 0 ? "Atualizar fontes" : "Pesquisar fontes"}
+        <button onClick={handleSuggest} disabled={discovering}
+          title="Catálogo gerado pelo conhecimento do Claude + validação HTTP. ~20s, confiável."
+          className="flex items-center gap-1 px-2.5 py-1 bg-accent text-black text-[11px] font-semibold rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors">
+          {discovering && currentStage === "suggest" ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />}
+          {discovering && currentStage === "suggest"
+            ? "Montando..."
+            : sources.length > 0 ? "Revisar catálogo" : "Montar catálogo"}
         </button>
       </div>
 
@@ -243,8 +283,27 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
         </div>
       )}
 
-      {/* Progress dos 3 estágios — currentStage real via callStage sequencial */}
-      {discovering && currentStage && (() => {
+      {/* Progress do modo rápido (suggest — 1 stage ~20s) */}
+      {discovering && currentStage === "suggest" && (
+        <div className="p-3 bg-cockpit-bg border border-accent/20 rounded-lg space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin text-accent" />
+              <span className="text-[11px] font-semibold text-cockpit-text">Montando catálogo</span>
+            </div>
+            <span className="text-[11px] text-cockpit-muted tabular-nums">{discoverElapsed}s</span>
+          </div>
+          <p className="text-[10px] text-cockpit-muted">
+            Claude lista publishers conhecidos + validação HTTP paralela (~20s)
+          </p>
+          <div className="h-1 bg-cockpit-border-light rounded-full overflow-hidden">
+            <div className="h-full bg-accent rounded-full animate-pulse" style={{ width: `${Math.min(95, discoverElapsed * 5)}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Progress do modo expandido (3 estágios web_search) */}
+      {discovering && currentStage && currentStage !== "suggest" && (() => {
         const stages: { id: DiscoverStage; label: string; detail: string }[] = [
           { id: "decomp", label: "Decompondo tema", detail: "subtemas, jargão, perfis-alvo, queries planejadas (~15s)" },
           { id: "discover", label: "Descoberta multi-query", detail: "1 web_search por query, acumulando candidatos" },
@@ -382,6 +441,24 @@ export function TermSourcesManager({ termId, sources, onSourcesChange }: Props) 
           <Plus size={12} />
         </button>
       </div>
+
+      {/* Modo expandido — web_search profundo (lento, pode falhar) */}
+      <details className="text-[10px] text-cockpit-muted">
+        <summary className="cursor-pointer hover:text-accent select-none py-1">
+          🌐 Modo expandido (descobrir fontes novas na web)
+        </summary>
+        <div className="pt-1.5 pl-3 space-y-1.5">
+          <p className="leading-relaxed">
+            Descoberta profunda via web_search em tempo real (3 estágios: decomposição → busca → validação).
+            <strong className="text-amber-500"> Lento (~2-5min) e pode falhar em gateway timeout.</strong>
+            Use quando quiser ir além do que o Claude já conhece.
+          </p>
+          <button onClick={handleDiscover} disabled={discovering}
+            className="text-[10px] text-cockpit-muted hover:text-accent underline decoration-dotted">
+            {discovering && currentStage !== "suggest" ? "descobrindo..." : "iniciar descoberta profunda"}
+          </button>
+        </div>
+      </details>
     </div>
   )
 }
