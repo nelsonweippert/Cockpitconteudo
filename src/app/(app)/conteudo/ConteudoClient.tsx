@@ -122,6 +122,8 @@ export function ConteudoClient({
   // Tracker do estágio do pipeline (client-side, baseado em tempo elapsed)
   const [pipelineStartedAt, setPipelineStartedAt] = useState<number | null>(null)
   const [pipelineElapsed, setPipelineElapsed] = useState(0)
+  // Seletor de temas pra gerar ideias (só os selecionados são usados)
+  const [selectedTermIds, setSelectedTermIds] = useState<string[]>([])
   // Ordenação
   const [ideaSort, setIdeaSort] = useState<"recent" | "pioneer" | "viral">("recent")
 
@@ -149,6 +151,20 @@ export function ConteudoClient({
     const active = monitorTerms.filter((t: any) => t.isActive).map((t: any) => t.term)
     if (active.length > 0) setIdeaTermFilter(active[0])
   }, [tab, ideaTermFilter, monitorTerms])
+
+  // Auto-seleciona temas COM fontes curadas quando a lista muda pela primeira vez.
+  // Se não tem nenhum tema selecionado ainda, default = todos com fontes ativas.
+  useEffect(() => {
+    if (selectedTermIds.length > 0) return
+    const withSources = monitorTerms.filter((t: any) => {
+      if (!t.isActive) return false
+      const s = Array.isArray(t.sources) ? t.sources : []
+      return s.some((x: any) => x?.isActive !== false)
+    })
+    if (withSources.length > 0) {
+      setSelectedTermIds(withSources.map((t: any) => t.id))
+    }
+  }, [monitorTerms, selectedTermIds.length])
 
   // Timer do pipeline — atualiza elapsed a cada segundo enquanto rodando
   useEffect(() => {
@@ -190,12 +206,16 @@ export function ConteudoClient({
   }
 
   async function handleGenerateIdeas() {
+    if (selectedTermIds.length === 0) {
+      setIdeaError("Selecione pelo menos 1 tema pra gerar ideias")
+      return
+    }
     setGeneratingIdeas(true)
     setIdeaError(null)
     setPipelineStartedAt(Date.now())
     setPipelineElapsed(0)
     try {
-      const result = await generateIdeasNowAction()
+      const result = await generateIdeasNowAction(selectedTermIds)
       if (result.success) {
         const ideasRes = await getIdeasAction()
         if (ideasRes.success) setIdeaFeed(ideasRes.data as any[])
@@ -763,45 +783,109 @@ export function ConteudoClient({
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* 🤖 Motor automático */}
+              {/* 🤖 Monitor automático — com seletor de temas */}
               <div className="cockpit-card flex flex-col justify-between min-h-[200px]">
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div>
                       <h3 className="text-sm font-semibold text-cockpit-text flex items-center gap-1.5">🤖 Monitor automático</h3>
-                      <p className="text-[10px] text-cockpit-muted mt-0.5">Pesquisa todos os termos monitorados e gera ideias ancoradas em matérias recentes.</p>
+                      <p className="text-[10px] text-cockpit-muted mt-0.5">Selecione os temas e gere ideias ancoradas nas fontes curadas.</p>
                     </div>
+                    <a href="/temas" className="text-[10px] text-cockpit-muted hover:text-accent whitespace-nowrap shrink-0">gerenciar →</a>
                   </div>
-                  <div className="flex items-center gap-2 mt-3">
-                    <span className="text-xs text-cockpit-muted">
-                      <span className="text-base font-bold text-cockpit-text">{monitorTerms.filter((t: any) => t.isActive).length}</span> termo{monitorTerms.filter((t: any) => t.isActive).length === 1 ? "" : "s"} ativo{monitorTerms.filter((t: any) => t.isActive).length === 1 ? "" : "s"}
-                    </span>
-                    <a href="/temas" className="text-[11px] text-cockpit-muted hover:text-accent underline decoration-dotted underline-offset-2">
-                      gerenciar →
-                    </a>
-                  </div>
-                  {/* Status de curadoria de fontes */}
+
+                  {/* Seletor de temas */}
                   {(() => {
-                    const active = monitorTerms.filter((t: any) => t.isActive)
-                    if (active.length === 0) return null
-                    const withSources = active.filter((t: any) => Array.isArray(t.sources) && t.sources.some((s: any) => s?.isActive)).length
-                    const pct = Math.round((withSources / active.length) * 100)
-                    return (
-                      <div className="mt-2 flex items-center gap-2 text-[10px]">
-                        <div className="flex-1 h-1 bg-cockpit-border-light rounded-full overflow-hidden">
-                          <div className={cn("h-full rounded-full transition-all", pct === 100 ? "bg-emerald-500" : pct > 0 ? "bg-accent" : "bg-cockpit-border")} style={{ width: `${pct}%` }} />
+                    const activeTerms = monitorTerms.filter((t: any) => t.isActive)
+                    const hasAnyWithSources = activeTerms.some((t: any) => Array.isArray(t.sources) && t.sources.some((s: any) => s?.isActive !== false))
+
+                    if (activeTerms.length === 0) {
+                      return (
+                        <div className="mt-2 p-2 bg-amber-500/5 border border-amber-500/20 rounded-lg text-[10px] text-amber-500">
+                          Nenhum tema ativo. Adicione em <a href="/temas" className="underline">/temas</a>.
                         </div>
-                        <span className="text-cockpit-muted whitespace-nowrap">
-                          {withSources}/{active.length} com fontes curadas
+                      )
+                    }
+
+                    if (!hasAnyWithSources) {
+                      return (
+                        <div className="mt-2 p-2 bg-amber-500/5 border border-amber-500/20 rounded-lg text-[10px] text-amber-500">
+                          Nenhum tema tem fontes curadas. Monte o catálogo em <a href="/temas" className="underline">/temas</a> primeiro.
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div className="mt-2 space-y-1 max-h-[150px] overflow-y-auto">
+                        {activeTerms.map((t: any) => {
+                          const s = Array.isArray(t.sources) ? t.sources : []
+                          const sourcesActive = s.filter((x: any) => x?.isActive !== false).length
+                          const hasSources = sourcesActive > 0
+                          const isChecked = selectedTermIds.includes(t.id)
+                          return (
+                            <label key={t.id}
+                              className={cn(
+                                "flex items-center gap-2 px-2 py-1.5 rounded-lg border text-[11px] transition-colors cursor-pointer",
+                                !hasSources ? "border-cockpit-border-light bg-cockpit-border-light/10 opacity-50 cursor-not-allowed" :
+                                isChecked ? "border-accent/40 bg-accent/5" : "border-cockpit-border hover:border-cockpit-text/20"
+                              )}>
+                              <input type="checkbox"
+                                checked={isChecked}
+                                disabled={!hasSources}
+                                onChange={() => {
+                                  setSelectedTermIds((prev) => prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id])
+                                }}
+                                className="accent-accent shrink-0" />
+                              <span className="font-semibold text-cockpit-text truncate flex-1">{t.term}</span>
+                              {hasSources ? (
+                                <span className="text-[9px] text-cockpit-muted whitespace-nowrap">
+                                  {sourcesActive} fonte{sourcesActive === 1 ? "" : "s"}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-amber-500 whitespace-nowrap">⚠ sem fontes</span>
+                              )}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Seletor rápido */}
+                  {(() => {
+                    const selectable = monitorTerms.filter((t: any) => {
+                      if (!t.isActive) return false
+                      const s = Array.isArray(t.sources) ? t.sources : []
+                      return s.some((x: any) => x?.isActive !== false)
+                    })
+                    if (selectable.length < 2) return null
+                    const allSelected = selectable.every((t: any) => selectedTermIds.includes(t.id))
+                    return (
+                      <div className="flex items-center justify-between mt-2 text-[10px]">
+                        <button onClick={() => {
+                          if (allSelected) setSelectedTermIds([])
+                          else setSelectedTermIds(selectable.map((t: any) => t.id))
+                        }}
+                          className="text-cockpit-muted hover:text-accent underline decoration-dotted">
+                          {allSelected ? "desmarcar todos" : "selecionar todos"}
+                        </button>
+                        <span className="text-cockpit-muted">
+                          {selectedTermIds.length} de {selectable.length} selecionado{selectedTermIds.length === 1 ? "" : "s"}
                         </span>
                       </div>
                     )
                   })()}
                 </div>
-                <button onClick={handleGenerateIdeas} disabled={generatingIdeas || monitorTerms.filter((t: any) => t.isActive).length === 0}
+
+                <button onClick={handleGenerateIdeas}
+                  disabled={generatingIdeas || selectedTermIds.length === 0}
                   className="mt-3 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-accent text-black text-xs font-semibold rounded-xl hover:bg-accent-hover disabled:opacity-50 transition-colors">
                   {generatingIdeas ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                  {generatingIdeas ? "Pesquisando (~90s)..." : "Gerar ideias agora"}
+                  {generatingIdeas
+                    ? "Pesquisando (~90s)..."
+                    : selectedTermIds.length === 0
+                    ? "Selecione temas"
+                    : `Gerar ideias (${selectedTermIds.length} tema${selectedTermIds.length === 1 ? "" : "s"})`}
                 </button>
               </div>
 

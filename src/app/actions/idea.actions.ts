@@ -196,11 +196,22 @@ export async function generateIdeaForThemeAction(theme: string): Promise<ActionR
   }
 }
 
-export async function generateIdeasNowAction(): Promise<ActionResult> {
+export async function generateIdeasNowAction(termIds?: string[]): Promise<ActionResult> {
   try {
     const userId = await getUserId()
-    const terms = await db.monitorTerm.findMany({ where: { userId, isActive: true } })
-    if (terms.length === 0) return { success: false, error: "Adicione termos de monitoramento primeiro" }
+    // Se termIds fornecido, usa só esses. Caso contrário, pega todos ativos (legado).
+    const where = termIds && termIds.length > 0
+      ? { userId, id: { in: termIds } }
+      : { userId, isActive: true }
+    const terms = await db.monitorTerm.findMany({ where })
+    if (terms.length === 0) {
+      return {
+        success: false,
+        error: termIds && termIds.length > 0
+          ? "Nenhum tema selecionado encontrado"
+          : "Adicione termos de monitoramento primeiro",
+      }
+    }
 
     const { generateIdeasWithResearch, safeDate } = await import("@/services/ai.service")
     const termNames = terms.map((t) => t.term)
