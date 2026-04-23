@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
 import {
   Sun, Sunset, Moon, Menu, X, ChevronRight, LogOut, Layers,
-  BarChart3, Target, Lightbulb, Workflow, BookOpen, Radar, Activity,
+  BarChart3, Target, Lightbulb, Workflow, BookOpen, Radar, Activity, Bell,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +17,7 @@ const navItems = [
   { label: "Funil", href: "/funil", icon: Workflow },
   { label: "Skills", href: "/skills", icon: BookOpen },
   { label: "Radar", href: "/radar", icon: Radar },
+  { label: "Bot", href: "/bot", icon: Bell },
   { label: "Uso da API", href: "/uso", icon: Activity },
 ]
 
