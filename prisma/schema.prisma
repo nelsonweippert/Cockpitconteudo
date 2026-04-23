@@ -21,13 +21,14 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  areas          Area[]
-  contents       Content[]
-  skillSources   SkillSource[]
-  apiUsage       ApiUsage[]
-  monitorTerms   MonitorTerm[]
-  ideaFeed       IdeaFeed[]
-  newsEvidence   NewsEvidence[]
+  areas              Area[]
+  contents           Content[]
+  skillSources       SkillSource[]
+  apiUsage           ApiUsage[]
+  monitorTerms       MonitorTerm[]
+  ideaFeed           IdeaFeed[]
+  newsEvidence       NewsEvidence[]
+  themeDiscoveryRuns ThemeDiscoveryRun[]
 
   @@map("users")
 }
@@ -199,6 +200,8 @@ model MonitorTerm {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  discoveryRuns ThemeDiscoveryRun[]
+
   @@index([userId])
   @@map("monitor_terms")
 }
@@ -285,4 +288,41 @@ model SkillSource {
 
   @@index([userId, skillId])
   @@map("skill_sources")
+}
+
+// ========================================
+// ThemeDiscoveryRun — cache de 1 descoberta/dia/tema
+// Serve 2 consumidores: o digest do Telegram (compacto) e o
+// generateIdeasNow (que reaproveita candidates evitando novo web_search).
+// ========================================
+
+model ThemeDiscoveryRun {
+  id          String   @id @default(cuid())
+  userId      String
+  termId      String
+  runDate     DateTime @db.Date // só data (sem hora) — 1 execução por dia
+  runStartedAt DateTime @default(now())
+
+  // Candidates brutos retornados pelo runDiscoveryPhase.
+  // Shape: Array<{ term, url, title, snippet, publisher, publishedAt?, locale }>
+  candidates  Json
+
+  // Digest gerado (Haiku sumarizou os candidates num texto compacto pra Telegram).
+  // Nullable — pode ter discovery sem ter enviado digest ainda.
+  digestText   String?
+  digestSentAt DateTime?
+  digestError  String?
+
+  // Métricas úteis pra observabilidade
+  candidatesCount Int     @default(0)
+  searchesUsed    Int     @default(0)
+  durationMs      Int?
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  term MonitorTerm @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, termId, runDate])
+  @@index([userId, runDate])
+  @@index([termId, runDate])
+  @@map("theme_discovery_runs")
 }

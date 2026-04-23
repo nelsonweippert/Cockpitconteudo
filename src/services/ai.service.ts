@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { Prisma } from "@/generated/prisma/client"
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -131,7 +132,7 @@ NÃO filtre por relevância aqui — coleta. A triagem cruza com a intenção de
 FORMATO: JSON { candidates: [...] }.`
 }
 
-async function runDiscoveryPhase(opts: {
+export async function runDiscoveryPhase(opts: {
   terms: string[]
   termIntents: Record<string, string>
   // Mapa termo → hosts permitidos (allowed_domains). Quando presente, restringe
@@ -986,31 +987,104 @@ export async function generateIdeasWithResearch(opts: GenerateIdeasOptions): Pro
   // ── Stage 1 — Claude web_search:
   // - Pros termos COM fontes curadas: allowed_domains restrito
   // - Pros termos SEM fontes com cobertura RSS baixa (<3): busca livre
+  // - CACHE: se já rodou discovery hoje pro termo (via cron do digest), reusa.
   const undercoveredTerms = termsWithoutSources.filter((t) => (rssByTerm.get(t) ?? 0) < 3)
   const claudeTerms = [...termsWithSources, ...undercoveredTerms]
   let claudeDiscoveryUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, searchesUsed: 0 }
   const claudeItems: FeedItem[] = []
   if (claudeTerms.length > 0) {
-    const claudeIntents: Record<string, string> = {}
-    for (const t of claudeTerms) if (termIntents[t]) claudeIntents[t] = termIntents[t]
-    const discovery = await runDiscoveryPhase({
-      terms: claudeTerms,
-      termIntents: claudeIntents,
-      sourcesByTerm,
-      userId,
+    // Lookup de termId por nome (cache é chaveado por termId)
+    const termRecords = await db.monitorTerm.findMany({
+      where: { userId, term: { in: claudeTerms } },
+      select: { id: true, term: true },
     })
-    claudeDiscoveryUsage = discovery.usage
-    console.log(`[pipeline] stage1 (claude, ${claudeTerms.length} termos, ${termsWithSources.length} com curadoria): ${discovery.candidates.length} candidatos`)
-    for (const c of discovery.candidates) {
-      claudeItems.push({
-        term: c.term,
-        title: c.title,
-        url: c.url,
-        pubDate: safeDate(c.publishedAt),
-        source: c.publisher,
-        description: c.snippet,
-        locale: c.locale === "en-US" ? "en-US" : "pt-BR",
+    const termNameToId = new Map(termRecords.map((t) => [t.term, t.id]))
+    const today = new Date()
+    today.setUTCHours(0, 0, 0, 0)
+
+    const cachedRuns = await db.themeDiscoveryRun.findMany({
+      where: {
+        userId,
+        runDate: today,
+        termId: { in: termRecords.map((t) => t.id) },
+      },
+    })
+    const cachedByTermName = new Map<string, typeof cachedRuns[number]>()
+    for (const r of cachedRuns) {
+      const name = termRecords.find((t) => t.id === r.termId)?.term
+      if (name) cachedByTermName.set(name, r)
+    }
+
+    // Pega candidates do cache
+    for (const [name, run] of cachedByTermName) {
+      const arr = (Array.isArray(run.candidates) ? run.candidates : []) as Array<{ term: string; url: string; title: string; snippet: string; publisher: string; publishedAt?: string | null; locale: string }>
+      for (const c of arr) {
+        claudeItems.push({
+          term: name,
+          title: c.title,
+          url: c.url,
+          pubDate: safeDate(c.publishedAt),
+          source: c.publisher,
+          description: c.snippet,
+          locale: c.locale === "en-US" ? "en-US" : "pt-BR",
+        })
+      }
+    }
+
+    // Só roda discovery pros termos NÃO cacheados
+    const uncachedTerms = claudeTerms.filter((t) => !cachedByTermName.has(t))
+    if (cachedByTermName.size > 0) {
+      console.log(`[pipeline] stage1: ${cachedByTermName.size} termos reaproveitados do cache diário (+${claudeItems.length} candidatos)`)
+    }
+
+    if (uncachedTerms.length > 0) {
+      const claudeIntents: Record<string, string> = {}
+      for (const t of uncachedTerms) if (termIntents[t]) claudeIntents[t] = termIntents[t]
+      const discovery = await runDiscoveryPhase({
+        terms: uncachedTerms,
+        termIntents: claudeIntents,
+        sourcesByTerm,
+        userId,
       })
+      claudeDiscoveryUsage = discovery.usage
+      console.log(`[pipeline] stage1: claude rodou pra ${uncachedTerms.length} termos novos (${discovery.candidates.length} candidatos)`)
+
+      // Persiste candidates no cache, agrupados por termId
+      const byTerm = new Map<string, typeof discovery.candidates>()
+      for (const c of discovery.candidates) {
+        const list = byTerm.get(c.term) ?? []
+        list.push(c)
+        byTerm.set(c.term, list)
+      }
+      for (const [termName, cands] of byTerm) {
+        const termId = termNameToId.get(termName)
+        if (!termId) continue
+        await db.themeDiscoveryRun.upsert({
+          where: { userId_termId_runDate: { userId, termId, runDate: today } },
+          create: {
+            userId, termId, runDate: today,
+            candidates: cands as unknown as Prisma.InputJsonValue,
+            candidatesCount: cands.length,
+            searchesUsed: 0, // contagem total fica no run, não por termo
+          },
+          update: {
+            candidates: cands as unknown as Prisma.InputJsonValue,
+            candidatesCount: cands.length,
+          },
+        }).catch((err) => console.error(`[pipeline] cache upsert falhou pra "${termName}":`, err))
+      }
+
+      for (const c of discovery.candidates) {
+        claudeItems.push({
+          term: c.term,
+          title: c.title,
+          url: c.url,
+          pubDate: safeDate(c.publishedAt),
+          source: c.publisher,
+          description: c.snippet,
+          locale: c.locale === "en-US" ? "en-US" : "pt-BR",
+        })
+      }
     }
   } else {
     console.log(`[pipeline] stage1: pulado`)

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Bell, Send, CheckCircle2, AlertCircle, ExternalLink, Copy, Loader2 } from "lucide-react"
+import { Bell, Send, CheckCircle2, AlertCircle, ExternalLink, Copy, Loader2, Zap } from "lucide-react"
 import { saveTelegramChatIdAction, sendTelegramTestAction } from "@/app/actions/telegram.actions"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +17,15 @@ export function BotClient({ initialStatus }: { initialStatus: Status }) {
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null)
   const [saving, startSave] = useTransition()
   const [testing, startTest] = useTransition()
+  const [digestRunning, setDigestRunning] = useState(false)
+  const [digestResult, setDigestResult] = useState<{
+    themesProcessed: number
+    themesWithNews: number
+    themesCached: number
+    messagesSent: number
+    errors: string[]
+    durationMs: number
+  } | null>(null)
 
   const isBound = !!status.chatId
   const tokenOK = status.tokenConfigured
@@ -46,6 +55,26 @@ export function BotClient({ initialStatus }: { initialStatus: Status }) {
         setMessage({ type: "err", text: res.error ?? "Erro no teste" })
       }
     })
+  }
+
+  async function handleRunDigest() {
+    setDigestRunning(true)
+    setDigestResult(null)
+    setMessage(null)
+    try {
+      const res = await fetch("/api/digest/run-now", { method: "POST" })
+      const body = await res.json()
+      if (body.success) {
+        setDigestResult(body.data)
+        setMessage({ type: "ok", text: `Digest enviado — ${body.data.messagesSent} mensagem(ns) no Telegram` })
+      } else {
+        setMessage({ type: "err", text: body.error ?? "Falha ao rodar digest" })
+      }
+    } catch (err) {
+      setMessage({ type: "err", text: err instanceof Error ? err.message : "Erro de rede" })
+    } finally {
+      setDigestRunning(false)
+    }
   }
 
   return (
@@ -167,13 +196,66 @@ export function BotClient({ initialStatus }: { initialStatus: Status }) {
         )}
       </div>
 
-      {/* Próximos passos */}
+      {/* Digest manual */}
       {isBound && tokenOK && (
-        <div className="cockpit-card bg-cockpit-bg border-cockpit-border-light">
-          <p className="text-xs text-cockpit-muted">
-            <strong className="text-cockpit-text">Próximo:</strong> configurar o digest diário (fase 2).
-            O cron vai rodar descoberta 1x/dia por tema ativo e enviar resumo via bot.
-            Os mesmos candidatos ficam cacheados pra &quot;Gerar ideias&quot; reaproveitar sem re-fetchar.
+        <div className="cockpit-card space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-cockpit-text flex items-center gap-2">
+                <Zap size={14} className="text-accent" />
+                Digest diário
+              </h2>
+              <p className="text-[11px] text-cockpit-muted mt-0.5">
+                Descoberta + resumo Haiku por tema ativo com fontes. Enviado automaticamente todo dia às 07h BRT.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleRunDigest}
+            disabled={digestRunning}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-accent text-black text-sm font-semibold rounded-xl hover:bg-accent-hover disabled:opacity-50 transition-colors"
+          >
+            {digestRunning ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
+            {digestRunning ? "Rodando digest (pode levar 1-3 min)..." : "Rodar digest agora"}
+          </button>
+
+          {digestResult && (
+            <div className="p-3 bg-cockpit-bg border border-cockpit-border rounded-xl space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-cockpit-muted">Temas processados</span>
+                <span className="font-semibold text-cockpit-text">{digestResult.themesProcessed}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-cockpit-muted">Com novidades</span>
+                <span className="font-semibold text-emerald-500">{digestResult.themesWithNews}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-cockpit-muted">Reaproveitados do cache</span>
+                <span className="font-semibold text-cockpit-text">{digestResult.themesCached}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-cockpit-muted">Mensagens enviadas</span>
+                <span className="font-semibold text-cockpit-text">{digestResult.messagesSent}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-cockpit-muted">Duração</span>
+                <span className="font-semibold text-cockpit-text">{(digestResult.durationMs / 1000).toFixed(1)}s</span>
+              </div>
+              {digestResult.errors.length > 0 && (
+                <div className="pt-2 mt-2 border-t border-cockpit-border-light">
+                  <p className="text-red-500 font-medium mb-1">Erros:</p>
+                  <ul className="text-red-400 space-y-0.5 pl-3">
+                    {digestResult.errors.slice(0, 5).map((e, i) => <li key={i} className="list-disc">{e}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          <p className="text-[10px] text-cockpit-muted italic">
+            Os mesmos candidatos alimentam a geração de ideias — se você clicar &quot;Gerar ideias&quot; hoje,
+            o pipeline reaproveita o que o digest já descobriu.
           </p>
         </div>
       )}
