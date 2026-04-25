@@ -11,6 +11,7 @@ import { updateContentAction, advanceContentPhaseAction, archiveContentAction, g
 import { CONTENT_SKILLS, SKILL_LIST, type SkillId } from "@/config/content-skills"
 import type { Area, ContentPhase } from "@/types"
 import { SeoScorePanel } from "./SeoScorePanel"
+import { PrePublishGate } from "./PrePublishGate"
 
 type RefCard = {
   id: string
@@ -167,8 +168,23 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
     if (result.success) onUpdate(result.data as Content)
   }
 
+  const [prePublishOpen, setPrePublishOpen] = useState(false)
+
   function handlePhaseChange(phase: ContentPhase) {
+    // Gate: pra publicar, abre review primeiro (se vindo de fase prévia)
+    if (phase === "PUBLISHED" && content.phase !== "PUBLISHED") {
+      setPrePublishOpen(true)
+      return
+    }
     startTransition(async () => { const r = await advanceContentPhaseAction(content.id, phase); if (r.success) onUpdate(r.data as Content) })
+  }
+
+  function confirmPublish() {
+    setPrePublishOpen(false)
+    startTransition(async () => {
+      const r = await advanceContentPhaseAction(content.id, "PUBLISHED")
+      if (r.success) onUpdate(r.data as Content)
+    })
   }
 
   function handleArchive() {
@@ -736,6 +752,24 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
           ) : <div />}
         </div>
       </div>
+
+      {/* Pre-publish gate (modal) */}
+      <PrePublishGate
+        open={prePublishOpen}
+        onClose={() => setPrePublishOpen(false)}
+        onConfirm={confirmPublish}
+        content={{
+          title,
+          hook,
+          script,
+          description,
+          targetDuration,
+          platform: content.platform,
+          format: content.format,
+          skill: content.skill,
+          publishedUrl: content.publishedUrl,
+        }}
+      />
     </>
   )
 }
