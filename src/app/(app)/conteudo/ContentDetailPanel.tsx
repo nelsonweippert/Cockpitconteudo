@@ -13,6 +13,8 @@ import type { Area, ContentPhase } from "@/types"
 import { SeoScorePanel } from "./SeoScorePanel"
 import { PrePublishGate } from "./PrePublishGate"
 import { ReferencesBlock, type ReferencesData } from "./components/ReferencesBlock"
+import { BriefingSection } from "./components/BriefingSection"
+import { IdeationSection } from "./components/IdeationSection"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Content = any
@@ -81,47 +83,6 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
   const curIdx = PHASES.findIndex((p) => p.id === content.phase)
   const prevPhase = curIdx > 0 ? PHASES[curIdx - 1] : null
   const nextPhase = curIdx < PHASES.length - 1 ? PHASES[curIdx + 1] : null
-
-  // Render text with clickable links
-  function renderTextWithLinks(text: string) {
-    const urlRegex = /(https?:\/\/[^\s\)]+)/g
-    const parts = text.split(urlRegex)
-    return parts.map((part, i) => {
-      if (urlRegex.test(part)) {
-        let display = part
-        try { display = new URL(part).hostname.replace("www.", "") } catch {}
-        return (
-          <a key={i} href={part} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/10 text-accent text-xs font-medium rounded-lg hover:bg-accent/20 hover:underline transition-colors break-all">
-            🔗 {display}
-          </a>
-        )
-      }
-      return <span key={i}>{part}</span>
-    })
-  }
-
-  // Extract and classify links from text
-  function extractLinks(text: string): { ptBr: { url: string; host: string }[]; en: { url: string; host: string }[] } {
-    const urlRegex = /https?:\/\/[^\s\)]+/g
-    const urls = text.match(urlRegex) ?? []
-    const ptBrDomains = [".com.br", ".br/", "tecmundo", "olhardigital", "canaltech", "infomoney", "g1.globo", "uol.com", "exame.com", "livecoins", "moneytimes", "seudinheiro", "tecnoblog", "meiobit", "tabnews"]
-    const ptBr: { url: string; host: string }[] = []
-    const en: { url: string; host: string }[] = []
-    for (const url of urls) {
-      let host = url
-      try { host = new URL(url).hostname.replace("www.", "") } catch {}
-      const isPtBr = ptBrDomains.some((d) => url.toLowerCase().includes(d))
-      if (isPtBr) ptBr.push({ url, host })
-      else en.push({ url, host })
-    }
-    return { ptBr, en }
-  }
-
-  // Render text WITHOUT links (for the description part)
-  function renderTextOnly(text: string) {
-    return text.replace(/https?:\/\/[^\s\)]+/g, "").replace(/\n🔗 Fontes:[\s\S]*$/, "").trim()
-  }
 
   // Fallback quando skill não tem durationOptions definidas
   const FALLBACK_SHORT = [
@@ -384,87 +345,13 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
         <div className="flex-1 overflow-hidden flex">
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
-            {/* ═══ IDEALIZAÇÃO ═══ */}
-            {content.phase === "IDEATION" && (<>
-              {/* Skill selector */}
-              <div>
-                <p className="text-xs font-medium text-cockpit-muted mb-3">Selecione o tipo de conteúdo</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {SKILL_LIST.map((s) => {
-                    const platformMap: Record<string, string> = { INSTAGRAM_REELS: "INSTAGRAM", YOUTUBE_SHORTS: "YOUTUBE", YOUTUBE_VIDEO: "YOUTUBE", TIKTOK_VIDEO: "TIKTOK" }
-                    const formatMap: Record<string, string> = { INSTAGRAM_REELS: "REELS", YOUTUBE_SHORTS: "SHORT", YOUTUBE_VIDEO: "LONG_VIDEO", TIKTOK_VIDEO: "SHORT" }
-                    return (
-                      <button key={s.id} onClick={() => save({ skill: s.id, platform: platformMap[s.id] || "YOUTUBE", format: formatMap[s.id] || "SHORT" })}
-                        className={cn("flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
-                          content.skill === s.id ? "border-accent bg-accent/10" : "border-cockpit-border hover:border-accent/30")}>
-                        <span className="text-2xl">{s.icon}</span>
-                        <div>
-                          <p className={cn("text-xs font-semibold", content.skill === s.id ? "text-accent" : "text-cockpit-text")}>{s.label}</p>
-                          <p className="text-[10px] text-cockpit-muted leading-tight">{s.description}</p>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Research base — why this idea was chosen */}
-              {research && (() => {
-                const textOnly = renderTextOnly(research)
-                const { ptBr, en } = extractLinks(research)
-                const hasLinks = ptBr.length > 0 || en.length > 0
-                return (
-                  <div className="space-y-3">
-                    {/* Description */}
-                    <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 overflow-hidden">
-                      <div className="px-4 py-2.5 border-b border-blue-500/15">
-                        <p className="text-xs font-semibold text-blue-400 flex items-center gap-1.5">📰 Por que esta ideia foi escolhida</p>
-                      </div>
-                      <div className="px-4 py-3 text-sm text-cockpit-text whitespace-pre-wrap leading-relaxed">{textOnly}</div>
-                    </div>
-
-                    {/* Links separated by language */}
-                    {hasLinks && (
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* PT-BR */}
-                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
-                          <div className="px-3 py-2 border-b border-emerald-500/15">
-                            <p className="text-[11px] font-semibold text-emerald-400">🇧🇷 Fontes em Português</p>
-                          </div>
-                          <div className="px-3 py-2 space-y-1.5">
-                            {ptBr.length > 0 ? ptBr.map((link, i) => (
-                              <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cockpit-bg border border-cockpit-border rounded-lg text-xs text-cockpit-text hover:border-emerald-500/40 hover:text-emerald-400 transition-colors truncate">
-                                🔗 {link.host}
-                              </a>
-                            )) : (
-                              <p className="text-[10px] text-cockpit-muted py-1">Nenhuma fonte PT-BR encontrada</p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* EN */}
-                        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 overflow-hidden">
-                          <div className="px-3 py-2 border-b border-blue-500/15">
-                            <p className="text-[11px] font-semibold text-blue-400">🇺🇸 Fontes em Inglês</p>
-                          </div>
-                          <div className="px-3 py-2 space-y-1.5">
-                            {en.length > 0 ? en.map((link, i) => (
-                              <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cockpit-bg border border-cockpit-border rounded-lg text-xs text-cockpit-text hover:border-blue-500/40 hover:text-blue-400 transition-colors truncate">
-                                🔗 {link.host}
-                              </a>
-                            )) : (
-                              <p className="text-[10px] text-cockpit-muted py-1">Nenhuma fonte EN encontrada</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-            </>)}
+            {content.phase === "IDEATION" && (
+              <IdeationSection
+                research={research}
+                currentSkill={content.skill}
+                onSelectSkill={(skill, platform, format) => save({ skill, platform, format })}
+              />
+            )}
 
             {/* ═══ ELABORAÇÃO ═══ */}
             {content.phase === "ELABORATION" && (<>
@@ -573,90 +460,22 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
             </>)}
 
             {/* ═══ BRIEFING (resumo para gravação) ═══ */}
-            {content.phase === "BRIEFING" && (<>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <ClipboardList size={18} className="text-amber-500" />
-                  <div>
-                    <h2 className="text-sm font-bold text-cockpit-text">Briefing para Gravação</h2>
-                    <p className="text-[10px] text-cockpit-muted">Guia estruturado com frases de destaque por bloco</p>
-                  </div>
-                </div>
-                <AiBtn action="generate_briefing" label="Gerar briefing com IA" />
-              </div>
-
-              <AiPanel acceptField="notes" />
-
-              {/* Quick info bar */}
-              <div className="flex flex-wrap gap-3 p-3 bg-cockpit-bg border border-cockpit-border rounded-xl">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-cockpit-muted">🎯</span>
-                  <span className="text-xs font-semibold text-cockpit-text">{title}</span>
-                </div>
-                {targetDuration > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-cockpit-muted">⏱️</span>
-                    <span className="text-xs font-bold text-accent">{targetDuration >= 60 ? `${Math.floor(targetDuration / 60)}min` : `${targetDuration}s`}</span>
-                  </div>
-                )}
-                {skill && <span className="text-[10px] text-cockpit-muted">{skill.icon} {skill.label}</span>}
-              </div>
-
-              {/* Hook */}
-              {hook && (
-                <div className="p-4 bg-amber-500/5 border border-amber-500/15 rounded-xl">
-                  <p className="text-[10px] text-amber-500 font-semibold uppercase tracking-wider mb-1">🎣 Hook — abra com isso</p>
-                  <p className="text-sm font-medium text-cockpit-text italic">&ldquo;{hook}&rdquo;</p>
-                </div>
-              )}
-
-              {/* Briefing content (AI-generated or manual notes) */}
-              {notes ? (
-                <div className="p-4 bg-cockpit-bg border border-cockpit-border rounded-xl">
-                  <p className="text-[10px] text-cockpit-muted font-semibold uppercase tracking-wider mb-3">📋 Briefing estruturado</p>
-                  <div className="text-sm text-cockpit-text whitespace-pre-wrap leading-relaxed prose-sm max-w-none
-                    [&_strong]:text-accent [&_strong]:font-bold
-                    [&_h1]:text-base [&_h1]:font-bold [&_h1]:text-cockpit-text [&_h1]:mt-4 [&_h1]:mb-2
-                    [&_h2]:text-sm [&_h2]:font-bold [&_h2]:text-cockpit-text [&_h2]:mt-3 [&_h2]:mb-1.5
-                    [&_h3]:text-xs [&_h3]:font-bold [&_h3]:text-cockpit-text [&_h3]:mt-2 [&_h3]:mb-1">
-                    {notes}
-                  </div>
-                </div>
-              ) : (
-                <div className="p-8 border-2 border-dashed border-cockpit-border rounded-xl text-center text-cockpit-muted">
-                  <ClipboardList size={24} strokeWidth={1} className="mx-auto mb-2" />
-                  <p className="text-xs">Clique &ldquo;Gerar briefing com IA&rdquo; para criar o guia estruturado</p>
-                  <p className="text-[10px] mt-1">Cada bloco terá uma frase de destaque que não pode faltar</p>
-                </div>
-              )}
-
-              {/* Roteiro completo (colapsável) */}
-              {script && (
-                <details className="rounded-xl border border-cockpit-border overflow-hidden">
-                  <summary className="px-4 py-3 text-xs font-medium text-cockpit-muted cursor-pointer hover:bg-cockpit-surface-hover">📝 Roteiro completo (referência)</summary>
-                  <div className="px-4 py-3 border-t border-cockpit-border text-sm text-cockpit-text whitespace-pre-wrap font-mono text-[13px] max-h-64 overflow-y-auto">{script}</div>
-                </details>
-              )}
-
-              {/* Descrição (colapsável) */}
-              {description && (
-                <details className="rounded-xl border border-cockpit-border overflow-hidden">
-                  <summary className="px-4 py-3 text-xs font-medium text-cockpit-muted cursor-pointer hover:bg-cockpit-surface-hover">📋 Descrição / Caption</summary>
-                  <div className="px-4 py-3 border-t border-cockpit-border text-xs text-cockpit-muted whitespace-pre-wrap max-h-32 overflow-y-auto">{description}</div>
-                </details>
-              )}
-
-              {/* Fontes (clicáveis, do IdeaFeed → NewsEvidence) */}
-              <ReferencesBlock data={references} loading={referencesLoading} />
-
-              {/* Research livre do usuário (colapsável, só texto adicional que ele escreveu) */}
-              {research && (
-                <details className="rounded-xl border border-cockpit-border overflow-hidden">
-                  <summary className="px-4 py-3 text-xs font-medium text-cockpit-muted cursor-pointer hover:bg-cockpit-surface-hover">📝 Notas de pesquisa adicionais</summary>
-                  <div className="px-4 py-3 border-t border-cockpit-border text-xs text-cockpit-muted whitespace-pre-wrap max-h-48 overflow-y-auto">{research}</div>
-                </details>
-              )}
-            </>)}
+            {content.phase === "BRIEFING" && (
+              <BriefingSection
+                title={title}
+                hook={hook}
+                notes={notes}
+                script={script}
+                description={description}
+                research={research}
+                targetDuration={targetDuration}
+                skillId={content.skill}
+                references={references}
+                referencesLoading={referencesLoading}
+                aiButton={<AiBtn action="generate_briefing" label="Gerar briefing com IA" />}
+                aiPanel={<AiPanel acceptField="notes" />}
+              />
+            )}
 
             {/* ═══ EM EDIÇÃO ═══ */}
             {content.phase === "EDITING_SENT" && (<>
