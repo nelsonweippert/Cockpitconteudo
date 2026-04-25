@@ -130,7 +130,22 @@ export function ConteudoClient({
   useEffect(() => {
     if (tab === "ideas" && !ideasLoaded) {
       Promise.all([getMonitorTermsAction(), getIdeasAction()]).then(async ([termsRes, ideasRes]) => {
-        if (termsRes.success) setMonitorTerms(termsRes.data as any[])
+        if (termsRes.success) {
+          const terms = termsRes.data as any[]
+          setMonitorTerms(terms)
+          // Defaults pós-load: filtro de termo + IDs selecionados pra geração
+          // (consolidado aqui pra evitar setState em effect body)
+          const firstActive = terms.find((t: any) => t.isActive)?.term
+          if (firstActive) setIdeaTermFilter((cur) => cur || firstActive)
+          const withSources = terms.filter((t: any) => {
+            if (!t.isActive) return false
+            const s = Array.isArray(t.sources) ? t.sources : []
+            return s.some((x: any) => x?.isActive !== false)
+          })
+          if (withSources.length > 0) {
+            setSelectedTermIds((cur) => cur.length > 0 ? cur : withSources.map((t: any) => t.id))
+          }
+        }
         if (ideasRes.success) {
           setIdeaFeed(ideasRes.data as any[])
           // Auto-reclassify ideas to monitored terms
@@ -143,28 +158,6 @@ export function ConteudoClient({
       })
     }
   }, [tab, ideasLoaded])
-
-  // Auto-seleciona primeiro termo monitorado quando filtro está vazio (sem setState durante render)
-  useEffect(() => {
-    if (tab !== "ideas") return
-    if (ideaTermFilter) return
-    const active = monitorTerms.filter((t: any) => t.isActive).map((t: any) => t.term)
-    if (active.length > 0) setIdeaTermFilter(active[0])
-  }, [tab, ideaTermFilter, monitorTerms])
-
-  // Auto-seleciona temas COM fontes curadas quando a lista muda pela primeira vez.
-  // Se não tem nenhum tema selecionado ainda, default = todos com fontes ativas.
-  useEffect(() => {
-    if (selectedTermIds.length > 0) return
-    const withSources = monitorTerms.filter((t: any) => {
-      if (!t.isActive) return false
-      const s = Array.isArray(t.sources) ? t.sources : []
-      return s.some((x: any) => x?.isActive !== false)
-    })
-    if (withSources.length > 0) {
-      setSelectedTermIds(withSources.map((t: any) => t.id))
-    }
-  }, [monitorTerms, selectedTermIds.length])
 
   // Timer do pipeline — atualiza elapsed a cada segundo enquanto rodando
   useEffect(() => {

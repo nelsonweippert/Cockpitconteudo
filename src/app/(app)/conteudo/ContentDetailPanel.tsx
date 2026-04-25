@@ -155,18 +155,18 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
 
   // ── Save ──────────────────────────────────────────────────────────────
 
-  function save(data: Record<string, unknown>) {
+  const save = useCallback((data: Record<string, unknown>) => {
     startTransition(async () => {
       const result = await updateContentAction(content.id, data)
       if (result.success) onUpdate(result.data as Content)
     })
-  }
+  }, [content.id, onUpdate])
 
   // Save sem transition — para auto-saves da IA que precisam ser imediatos
-  async function saveNow(data: Record<string, unknown>) {
+  const saveNow = useCallback(async (data: Record<string, unknown>) => {
     const result = await updateContentAction(content.id, data)
     if (result.success) onUpdate(result.data as Content)
-  }
+  }, [content.id, onUpdate])
 
   const [prePublishOpen, setPrePublishOpen] = useState(false)
 
@@ -250,7 +250,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
       } else setAiResult("Erro. Verifique a ANTHROPIC_API_KEY.")
     } catch { setAiResult("Erro de conexão.") }
     setAiLoading(null); setAiConsideration("")
-  }, [content.skill, content.phase, title, hook, script, notes, research, targetDuration, currentDurationOption])
+  }, [content.skill, content.phase, title, hook, script, notes, research, targetDuration, currentDurationOption, saveNow])
 
   async function selectOption(opt: any) {
     if (aiField === "hook") { setHook(opt.text); await saveNow({ hook: opt.text }) }
@@ -258,7 +258,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
     setAiOptions(null); setAiField(null)
   }
 
-  function useResult(field: string) {
+  function acceptResult(field: string) {
     if (!aiResult) return
     if (field === "research" && research.trim()) {
       const combined = `${research}\n\n---\n\n${aiResult}`
@@ -324,7 +324,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
         </div>
         <div className="px-4 py-3 text-sm text-cockpit-text whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto">{aiResult}</div>
         <div className="px-4 py-2 border-t border-accent/20 flex items-center gap-2">
-          {acceptField && <button onClick={() => useResult(acceptField)} className="text-xs text-accent font-semibold hover:underline">Usar esta sugestão</button>}
+          {acceptField && <button onClick={() => acceptResult(acceptField)} className="text-xs text-accent font-semibold hover:underline">Usar esta sugestão</button>}
           <button onClick={() => setAiResult(null)} className="text-xs text-cockpit-muted hover:text-cockpit-text ml-auto">Descartar</button>
         </div>
         <RegenBar />
@@ -627,7 +627,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
               {hook && (
                 <div className="p-4 bg-amber-500/5 border border-amber-500/15 rounded-xl">
                   <p className="text-[10px] text-amber-500 font-semibold uppercase tracking-wider mb-1">🎣 Hook — abra com isso</p>
-                  <p className="text-sm font-medium text-cockpit-text italic">"{hook}"</p>
+                  <p className="text-sm font-medium text-cockpit-text italic">&ldquo;{hook}&rdquo;</p>
                 </div>
               )}
 
@@ -646,7 +646,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
               ) : (
                 <div className="p-8 border-2 border-dashed border-cockpit-border rounded-xl text-center text-cockpit-muted">
                   <ClipboardList size={24} strokeWidth={1} className="mx-auto mb-2" />
-                  <p className="text-xs">Clique "Gerar briefing com IA" para criar o guia estruturado</p>
+                  <p className="text-xs">Clique &ldquo;Gerar briefing com IA&rdquo; para criar o guia estruturado</p>
                   <p className="text-[10px] mt-1">Cada bloco terá uma frase de destaque que não pode faltar</p>
                 </div>
               )}
@@ -779,6 +779,48 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
 // Usa IdeaFeed → NewsEvidence via getContentReferencesAction
 // ═══════════════════════════════════════════════════════════════════════════
 
+const langLabel = (l: string) => l === "pt-BR" ? "🇧🇷 PT" : l === "en" ? "🇺🇸 EN" : l === "es" ? "🇪🇸 ES" : l
+const tierBadge = (t: string) => {
+  if (t === "TIER_1") return { text: "Tier 1", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" }
+  if (t === "TIER_2") return { text: "Tier 2", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" }
+  if (t === "BLOG") return { text: "Blog", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" }
+  if (t === "AGGREGATOR") return { text: "Agreg.", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" }
+  return { text: "—", cls: "bg-zinc-500/15 text-zinc-500 border-zinc-500/30" }
+}
+
+function ReferenceCard({ card, isPrimary, compact }: { card: RefCard; isPrimary?: boolean; compact?: boolean }) {
+  const tier = tierBadge(card.sourceAuthority)
+  return (
+    <a href={card.url} target="_blank" rel="noopener noreferrer"
+      className={cn(
+        "block p-3 rounded-xl border transition-all group",
+        isPrimary
+          ? "border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50"
+          : "border-cockpit-border bg-cockpit-bg hover:border-accent/40 hover:bg-cockpit-surface-hover"
+      )}>
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <div className="flex items-center gap-1.5 text-[10px]">
+          <span className={cn("px-1.5 py-0.5 rounded border font-semibold", tier.cls)}>{tier.text}</span>
+          <span className="text-cockpit-muted">{langLabel(card.language)}</span>
+          <span className="text-cockpit-muted">· {card.host}</span>
+        </div>
+        <ExternalLink size={11} className="text-cockpit-muted group-hover:text-accent flex-shrink-0" />
+      </div>
+      <p className="text-xs font-semibold text-cockpit-text leading-snug mb-1 group-hover:text-accent transition-colors">
+        {card.title}
+      </p>
+      {!compact && card.summary && (
+        <p className="text-[11px] text-cockpit-muted line-clamp-2 leading-relaxed">{card.summary}</p>
+      )}
+      {!compact && card.keyQuote && (
+        <p className="text-[10px] italic text-cockpit-muted mt-1.5 pl-2 border-l-2 border-cockpit-border line-clamp-2">
+          &ldquo;{card.keyQuote}&rdquo;
+        </p>
+      )}
+    </a>
+  )
+}
+
 function ReferencesBlock({ data, loading, compact = false }: { data: ReferencesData | null; loading: boolean; compact?: boolean }) {
   if (loading) {
     return (
@@ -788,48 +830,6 @@ function ReferencesBlock({ data, loading, compact = false }: { data: ReferencesD
     )
   }
   if (!data || (!data.primary && data.supporting.length === 0)) return null
-
-  const langLabel = (l: string) => l === "pt-BR" ? "🇧🇷 PT" : l === "en" ? "🇺🇸 EN" : l === "es" ? "🇪🇸 ES" : l
-  const tierBadge = (t: string) => {
-    if (t === "TIER_1") return { text: "Tier 1", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" }
-    if (t === "TIER_2") return { text: "Tier 2", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" }
-    if (t === "BLOG") return { text: "Blog", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" }
-    if (t === "AGGREGATOR") return { text: "Agreg.", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" }
-    return { text: "—", cls: "bg-zinc-500/15 text-zinc-500 border-zinc-500/30" }
-  }
-
-  const Card = ({ ref: r, isPrimary }: { ref: RefCard; isPrimary?: boolean }) => {
-    const tier = tierBadge(r.sourceAuthority)
-    return (
-      <a href={r.url} target="_blank" rel="noopener noreferrer"
-        className={cn(
-          "block p-3 rounded-xl border transition-all group",
-          isPrimary
-            ? "border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50"
-            : "border-cockpit-border bg-cockpit-bg hover:border-accent/40 hover:bg-cockpit-surface-hover"
-        )}>
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <div className="flex items-center gap-1.5 text-[10px]">
-            <span className={cn("px-1.5 py-0.5 rounded border font-semibold", tier.cls)}>{tier.text}</span>
-            <span className="text-cockpit-muted">{langLabel(r.language)}</span>
-            <span className="text-cockpit-muted">· {r.host}</span>
-          </div>
-          <ExternalLink size={11} className="text-cockpit-muted group-hover:text-accent flex-shrink-0" />
-        </div>
-        <p className="text-xs font-semibold text-cockpit-text leading-snug mb-1 group-hover:text-accent transition-colors">
-          {r.title}
-        </p>
-        {!compact && r.summary && (
-          <p className="text-[11px] text-cockpit-muted line-clamp-2 leading-relaxed">{r.summary}</p>
-        )}
-        {!compact && r.keyQuote && (
-          <p className="text-[10px] italic text-cockpit-muted mt-1.5 pl-2 border-l-2 border-cockpit-border line-clamp-2">
-            &ldquo;{r.keyQuote}&rdquo;
-          </p>
-        )}
-      </a>
-    )
-  }
 
   return (
     <div className="rounded-xl border border-cockpit-border overflow-hidden">
@@ -848,14 +848,14 @@ function ReferencesBlock({ data, loading, compact = false }: { data: ReferencesD
         {data.primary && (
           <div>
             <p className="text-[9px] uppercase tracking-wider text-amber-500 font-semibold mb-1.5">Primária</p>
-            <Card ref={data.primary} isPrimary />
+            <ReferenceCard card={data.primary} isPrimary compact={compact} />
           </div>
         )}
         {data.supporting.length > 0 && (
           <div>
             <p className="text-[9px] uppercase tracking-wider text-cockpit-muted font-semibold mb-1.5 mt-2">Apoio ({data.supporting.length})</p>
             <div className="space-y-1.5">
-              {data.supporting.map((r) => <Card key={r.id} ref={r} />)}
+              {data.supporting.map((r) => <ReferenceCard key={r.id} card={r} compact={compact} />)}
             </div>
           </div>
         )}
