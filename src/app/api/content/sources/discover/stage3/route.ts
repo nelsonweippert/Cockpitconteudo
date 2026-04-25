@@ -45,14 +45,15 @@ export async function POST(req: NextRequest) {
     }))
 
     // Merge com fontes existentes preservando isActive do usuário
-    const existing = Array.isArray(term.sources) ? (term.sources as any[]) : []
-    const existingByHost = new Map<string, any>(existing.map((s) => [s.host, s]))
+    type StoredSource = { host: string; isActive?: boolean; [key: string]: unknown }
+    const existing = Array.isArray(term.sources) ? (term.sources as StoredSource[]) : []
+    const existingByHost = new Map<string, StoredSource>(existing.map((s) => [s.host, s]))
     const merged = newSources.map((s) => {
       const prev = existingByHost.get(s.host)
       return prev ? { ...s, isActive: prev.isActive ?? true } : s
     })
     for (const s of existing) {
-      if (!merged.find((m) => m.host === s.host)) merged.push(s)
+      if (!merged.find((m) => m.host === s.host)) merged.push(s as typeof merged[number])
     }
 
     const updated = await db.monitorTerm.update({

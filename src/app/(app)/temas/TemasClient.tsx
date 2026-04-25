@@ -71,7 +71,7 @@ export function TemasClient({ initialTerms }: Props) {
     if (!newTerm.trim()) return
     const res = await addMonitorTermAction(newTerm.trim(), newIntent.trim() || undefined)
     if (res.success) {
-      const created = res.data as any
+      const created = res.data as { id: string; term: string; intent: string | null; isActive: boolean; createdAt: string }
       setTerms((prev) => [{
         id: created.id, term: created.term, intent: created.intent, isActive: created.isActive,
         sources: [], sourcesUpdatedAt: null, createdAt: created.createdAt,

@@ -27,9 +27,9 @@ interface Props {
   /** Esconde o seletor de tabs quando a rota já é dedicada a uma tab. */
   hideTabs?: boolean
   /** SSR: ideias pré-carregadas (elimina flash de loading). */
-  initialIdeas?: any[]
+  initialIdeas?: unknown[]
   /** SSR: termos monitorados pré-carregados. */
-  initialMonitorTerms?: any[]
+  initialMonitorTerms?: unknown[]
   /** Esconde todo o header do ConteudoClient — útil quando a page fornece seu próprio. */
   hideHeader?: boolean
 }
@@ -51,7 +51,8 @@ export function ConteudoClient({
   // Modal de criação (state interna está em CreationModal)
   const [showCreate, setShowCreate] = useState(false)
 
-  // Usage dashboard
+  // Usage dashboard (formato vem do /api/usage — UsageTab faz a renderização)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [usageData, setUsageData] = useState<any>(null)
   const [usageLoaded, setUsageLoaded] = useState(false)
 

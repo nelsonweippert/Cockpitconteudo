@@ -63,20 +63,21 @@ Retorne APENAS JSON array (sem markdown):
     if (text.type !== "text") return NextResponse.json({ error: "Erro IA" }, { status: 500 })
 
     const clean = text.text.replace(/```json?\n?/g, "").replace(/```/g, "").trim()
-    let ideas: any[]
+    type ParsedIdea = { title?: string; summary?: string; angle?: string; hook?: string; term?: string; relevance?: string; score?: number }
+    let ideas: ParsedIdea[]
     try { ideas = JSON.parse(clean) } catch { const m = clean.match(/\[[\s\S]*\]/); if (m) ideas = JSON.parse(m[0]); else return NextResponse.json({ error: "Erro parse" }, { status: 500 }) }
 
-    ideas = ideas.filter((i: any) => i.title && i.summary).map((i: any) => ({
+    ideas = ideas.filter((i) => i.title && i.summary).map((i) => ({
       ...i,
       term: i.term || autoTerm,
       score: Math.min(100, Math.max(90, i.score || 90)),
     }))
 
     await db.ideaFeed.createMany({
-      data: ideas.map((i: any) => ({
-        title: i.title, summary: i.summary, angle: i.angle || null, hook: i.hook || null,
-        term: i.term, relevance: `[${i.score}/100] ${i.relevance || ""}`, source: "Ideia personalizada",
-        score: i.score, userId,
+      data: ideas.map((i) => ({
+        title: i.title!, summary: i.summary!, angle: i.angle || null, hook: i.hook || null,
+        term: i.term!, relevance: `[${i.score}/100] ${i.relevance || ""}`, source: "Ideia personalizada",
+        score: i.score!, userId,
       })),
     })
 

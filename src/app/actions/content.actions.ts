@@ -15,7 +15,7 @@ async function getUserId() {
 export async function createContentAction(data: Record<string, unknown>): Promise<ActionResult> {
   try {
     const userId = await getUserId()
-    const content = await createContent(userId, data as any)
+    const content = await createContent(userId, data as Parameters<typeof createContent>[1])
     revalidatePath("/conteudo")
     return { success: true, data: content }
   } catch { return { success: false, error: "Erro ao criar conteúdo" } }
@@ -24,7 +24,7 @@ export async function createContentAction(data: Record<string, unknown>): Promis
 export async function updateContentAction(id: string, data: Record<string, unknown>): Promise<ActionResult> {
   try {
     const userId = await getUserId()
-    const content = await updateContent(id, userId, data as any)
+    const content = await updateContent(id, userId, data as Parameters<typeof updateContent>[2])
     revalidatePath("/conteudo")
     return { success: true, data: content }
   } catch { return { success: false, error: "Erro ao atualizar conteúdo" } }
@@ -33,7 +33,7 @@ export async function updateContentAction(id: string, data: Record<string, unkno
 export async function advanceContentPhaseAction(id: string, phase: string): Promise<ActionResult> {
   try {
     const userId = await getUserId()
-    const content = await updateContent(id, userId, { phase: phase as any })
+    const content = await updateContent(id, userId, { phase: phase as Parameters<typeof updateContent>[2]["phase"] })
     revalidatePath("/conteudo")
     return { success: true, data: content }
   } catch { return { success: false, error: "Erro ao avançar fase" } }

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import type { ContentPhase, ContentSkill, Platform, ContentFormat } from "@/generated/prisma/client"
+import type { ContentPhase, ContentSkill, Platform, ContentFormat, Prisma } from "@/generated/prisma/client"
 
 const INCLUDE_ALL = { areas: { include: { area: true } }, area: true, metrics: true }
 
@@ -73,7 +73,7 @@ export async function updateContent(id: string, userId: string, data: {
 
   return db.content.update({
     where: { id, userId },
-    data: updateData as any,
+    data: updateData as Prisma.ContentUncheckedUpdateInput,
     include: INCLUDE_ALL,
   })
 }

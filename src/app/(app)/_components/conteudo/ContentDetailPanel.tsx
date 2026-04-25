@@ -19,6 +19,9 @@ import { IdeationSection } from "./components/IdeationSection"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Content = any
 
+type ContentArea = { area?: { id: string }; areaId?: string }
+type AiOption = { text: string; style?: string; why?: string }
+
 const PHASES: { id: ContentPhase; label: string; icon: React.ElementType }[] = [
   { id: "IDEATION", label: "Idealização", icon: Lightbulb },
   { id: "ELABORATION", label: "Elaboração", icon: PenTool },
@@ -52,7 +55,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
   const [rawVideoUrl, setRawVideoUrl] = useState(content.rawVideoUrl ?? "")
   const [localAreaIds, setLocalAreaIds] = useState<string[]>(() => {
     try {
-      if (Array.isArray(content.areas) && content.areas.length > 0) return content.areas.map((a: any) => a.area?.id ?? a.areaId).filter(Boolean)
+      if (Array.isArray(content.areas) && content.areas.length > 0) return content.areas.map((a: ContentArea) => a.area?.id ?? a.areaId).filter(Boolean)
       return content.areaId ? [content.areaId] : []
     } catch { return [] }
   })
@@ -75,7 +78,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
   // AI state — persists across sub-tab changes
   const [aiLoading, setAiLoading] = useState<string | null>(null)
   const [aiResult, setAiResult] = useState<string | null>(null)
-  const [aiOptions, setAiOptions] = useState<any[] | null>(null)
+  const [aiOptions, setAiOptions] = useState<AiOption[] | null>(null)
   const [aiField, setAiField] = useState<string | null>(null)
   const [aiAction, setAiAction] = useState<string | null>(null)
   const [aiConsideration, setAiConsideration] = useState("")
@@ -192,7 +195,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
     setAiLoading(null); setAiConsideration("")
   }, [content.skill, content.phase, title, hook, script, notes, research, targetDuration, currentDurationOption, saveNow])
 
-  async function selectOption(opt: any) {
+  async function selectOption(opt: AiOption) {
     if (aiField === "hook") { setHook(opt.text); await saveNow({ hook: opt.text }) }
     else if (aiField === "title") { setTitle(opt.text); await saveNow({ title: opt.text }) }
     setAiOptions(null); setAiField(null)
@@ -247,7 +250,7 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
           <p className="text-xs font-semibold text-accent flex items-center gap-1"><Sparkles size={12} /> {aiField === "hook" ? "Escolha um hook" : aiField === "title" ? "Escolha um título" : "Opções"}</p>
           <button onClick={() => setAiOptions(null)} className="text-cockpit-muted hover:text-cockpit-text"><X size={14} /></button>
         </div>
-        <div className="p-2 space-y-1.5 max-h-80 overflow-y-auto">{aiOptions.map((opt: any, i: number) => (
+        <div className="p-2 space-y-1.5 max-h-80 overflow-y-auto">{aiOptions.map((opt: AiOption, i: number) => (
           <button key={i} onClick={() => selectOption(opt)} className="w-full text-left p-3 rounded-xl border border-cockpit-border bg-cockpit-bg hover:border-accent/40 hover:bg-accent/5 transition-all group">
             <p className="text-sm text-cockpit-text group-hover:text-accent font-medium">{opt.text}</p>
             {(opt.style || opt.why) && <div className="flex items-center gap-2 mt-1.5">{opt.style && <span className="text-[10px] px-2 py-0.5 rounded-full bg-cockpit-border-light text-cockpit-muted">{opt.style}</span>}{opt.why && <span className="text-[10px] text-cockpit-muted">{opt.why}</span>}</div>}
