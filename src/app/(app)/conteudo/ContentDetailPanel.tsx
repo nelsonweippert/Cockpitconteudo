@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState, useTransition } from "react"
 import {
   X, Loader2, Archive, ChevronRight, ChevronLeft,
-  Lightbulb, FileText, ExternalLink, Sparkles, RefreshCw,
-  Scissors, Send, PenTool, ClipboardList, Mic,
+  Lightbulb, ExternalLink, Sparkles, RefreshCw,
+  Scissors, Send, PenTool, ClipboardList,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { updateContentAction, advanceContentPhaseAction, archiveContentAction, getContentReferencesAction } from "@/app/actions/content.actions"
-import { CONTENT_SKILLS, SKILL_LIST, type SkillId } from "@/config/content-skills"
+import { CONTENT_SKILLS, type SkillId } from "@/config/content-skills"
 import type { Area, ContentPhase } from "@/types"
 import { SeoScorePanel } from "./SeoScorePanel"
 import { PrePublishGate } from "./PrePublishGate"
@@ -284,17 +284,6 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
           className="flex items-center gap-1 px-3 py-1.5 text-xs text-accent font-medium border border-accent/20 rounded-lg hover:bg-accent/10 disabled:opacity-50">
           <RefreshCw size={11} /> Regenerar
         </button>
-      </div>
-    )
-  }
-
-  // Briefing summary item
-  function BriefItem({ label, value, icon }: { label: string; value: string; icon?: string }) {
-    if (!value) return null
-    return (
-      <div className="p-4 bg-cockpit-bg border border-cockpit-border rounded-xl">
-        <p className="text-[10px] text-cockpit-muted font-medium uppercase tracking-wider mb-1.5">{icon} {label}</p>
-        <p className="text-sm text-cockpit-text whitespace-pre-wrap leading-relaxed">{value}</p>
       </div>
     )
   }
