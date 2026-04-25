@@ -18,23 +18,12 @@ import { DatePicker } from "@/components/ui/DatePicker"
 import { ContentDetailPanel } from "./ContentDetailPanel"
 import { IdeaCard } from "./IdeaCard"
 import { TermSourcesManager, type TermSource } from "./TermSourcesManager"
+import { PHASE_LABEL, PHASE_COLOR, SKILL_ICON, PIPELINE_PHASES } from "./constants"
+import { OverviewTab } from "./components/OverviewTab"
+import { UsageTab } from "./components/UsageTab"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Content = any
-
-const PHASE_LABEL: Record<string, string> = {
-  IDEATION: "Idealização", ELABORATION: "Elaboração", BRIEFING: "Briefing",
-  EDITING_SENT: "Em edição", PUBLISHED: "Publicado", ARCHIVED: "Arquivado",
-}
-const PHASE_COLOR: Record<string, string> = {
-  IDEATION: "bg-violet-500/15 text-violet-500 border-violet-500/20",
-  ELABORATION: "bg-amber-500/15 text-amber-500 border-amber-500/20",
-  BRIEFING: "bg-orange-500/15 text-orange-500 border-orange-500/20",
-  EDITING_SENT: "bg-pink-500/15 text-pink-500 border-pink-500/20",
-  PUBLISHED: "bg-accent/15 text-accent-dark border-accent/20",
-}
-const SKILL_ICON: Record<string, string> = { SHORT_VIDEO: "⚡", LONG_VIDEO: "🎬", INSTAGRAM: "📸" }
-const PIPELINE_PHASES: ContentPhase[] = ["IDEATION", "ELABORATION", "BRIEFING", "EDITING_SENT", "PUBLISHED"]
 
 export type ConteudoTab = "overview" | "pipeline" | "ideas" | "skills" | "usage"
 type Tab = ConteudoTab
@@ -638,91 +627,12 @@ export function ConteudoClient({
 
         {/* ═══ TAB: VISÃO GERAL ═══ */}
         {tab === "overview" && (
-          <div className="space-y-5">
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-              <div className="cockpit-card !py-3">
-                <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider flex items-center gap-1"><Lightbulb size={10} /> Idealização</p>
-                <p className="text-2xl font-bold text-violet-400 mt-1">{counts.ideas}</p>
-              </div>
-              <div className="cockpit-card !py-3">
-                <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider">Elaboração</p>
-                <p className="text-2xl font-bold text-amber-400 mt-1">{counts.elaboration}</p>
-              </div>
-              <div className="cockpit-card !py-3">
-                <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider">Em edição</p>
-                <p className="text-2xl font-bold text-pink-400 mt-1">{counts.editingSent}</p>
-              </div>
-              <div className="cockpit-card !py-3">
-                <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider flex items-center gap-1"><CheckCircle size={10} /> Publicados</p>
-                <p className="text-2xl font-bold text-accent mt-1">{counts.published}</p>
-              </div>
-              {SKILL_LIST.map((s) => (
-                <div key={s.id} className="cockpit-card !py-3">
-                  <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider">{s.icon} {s.label}</p>
-                  <p className="text-2xl font-bold text-cockpit-text mt-1">{counts.skill[s.id] || 0}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Pipeline distribution */}
-            {counts.total > 0 && (
-              <div className="cockpit-card">
-                <h3 className="text-xs font-semibold text-cockpit-text uppercase tracking-wider mb-4">Distribuição por fase</h3>
-                <div className="space-y-2.5">
-                  {PIPELINE_PHASES.map((p) => {
-                    const count = counts.phase[p] || 0
-                    const pct = counts.total > 0 ? (count / counts.total) * 100 : 0
-                    if (count === 0) return null
-                    return (
-                      <div key={p}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full border", PHASE_COLOR[p])}>{PHASE_LABEL[p]}</span>
-                          <span className="text-xs text-cockpit-muted">{count} ({pct.toFixed(0)}%)</span>
-                        </div>
-                        <div className="w-full h-2 bg-cockpit-border-light rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all opacity-60" style={{ width: `${pct}%`, backgroundColor: `var(--phase-${p.toLowerCase()}, #666)` }}>
-                            <div className={cn("h-full rounded-full", PHASE_COLOR[p].split(" ")[0])} />
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Recent + Series */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Recently published */}
-              {recentPublished.length > 0 && (
-                <div className="cockpit-card !p-0 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-cockpit-border">
-                    <h3 className="text-xs font-semibold text-cockpit-text uppercase tracking-wider flex items-center gap-1.5"><CheckCircle size={12} className="text-accent" /> Publicados recentemente</h3>
-                  </div>
-                  <div className="divide-y divide-cockpit-border">{recentPublished.map((c: Content) => (
-                    <div key={c.id} onClick={() => setSelectedContent(c)} className="flex items-center gap-3 px-4 py-3 hover:bg-cockpit-surface-hover cursor-pointer transition-colors">
-                      <div className="w-1 self-stretch rounded-full bg-accent flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-cockpit-text truncate">{c.title}</p>
-                        <p className="text-[10px] text-cockpit-muted mt-0.5">{c.skill ? SKILL_ICON[c.skill] + " " : ""}{c.publishedAt ? formatDate(c.publishedAt) : ""}</p>
-                      </div>
-                    </div>
-                  ))}</div>
-                </div>
-              )}
-
-            </div>
-
-            {/* Empty state */}
-            {counts.total === 0 && (
-              <div className="cockpit-card flex flex-col items-center justify-center py-16 text-cockpit-muted">
-                <Video size={32} strokeWidth={1} />
-                <p className="text-sm mt-3">Nenhum conteúdo ainda</p>
-                <button onClick={() => setShowCreate(true)} className="mt-3 text-xs text-accent hover:underline font-medium">+ Criar primeiro conteúdo</button>
-              </div>
-            )}
-          </div>
+          <OverviewTab
+            counts={counts}
+            recentPublished={recentPublished}
+            onSelectContent={setSelectedContent}
+            onCreateClick={() => setShowCreate(true)}
+          />
         )}
 
         {/* ═══ TAB: PIPELINE ═══ */}
@@ -1285,140 +1195,7 @@ export function ConteudoClient({
         )}
 
         {/* ═══ TAB: USO DA API ═══ */}
-        {tab === "usage" && (
-          <div className="space-y-5">
-            {!usageData ? (
-              <div className="flex items-center justify-center py-20"><Loader2 size={24} className="animate-spin text-cockpit-muted" /></div>
-            ) : (
-              <>
-                {/* KPIs */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="cockpit-card !py-3">
-                    <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider">Hoje</p>
-                    <p className="text-2xl font-bold text-cockpit-text mt-1">{usageData.today.calls}</p>
-                    <p className="text-[10px] text-cockpit-muted">requisições · ${usageData.today.cost.toFixed(4)}</p>
-                  </div>
-                  <div className="cockpit-card !py-3">
-                    <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider">Semana</p>
-                    <p className="text-2xl font-bold text-cockpit-text mt-1">{usageData.week.calls}</p>
-                    <p className="text-[10px] text-cockpit-muted">${usageData.week.cost.toFixed(4)}</p>
-                  </div>
-                  <div className="cockpit-card !py-3">
-                    <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider">Mês</p>
-                    <p className="text-2xl font-bold text-accent mt-1">{usageData.month.calls}</p>
-                    <p className="text-[10px] text-accent">${usageData.month.cost.toFixed(4)}</p>
-                  </div>
-                  <div className="cockpit-card !py-3">
-                    <p className="text-[11px] text-cockpit-muted font-medium uppercase tracking-wider">Total</p>
-                    <p className="text-2xl font-bold text-cockpit-text mt-1">{usageData.total.calls}</p>
-                    <p className="text-[10px] text-cockpit-muted">${usageData.total.cost.toFixed(4)} · {((usageData.total.tokens ?? 0) / 1000).toFixed(0)}K tokens</p>
-                  </div>
-                </div>
-
-                {/* Daily chart */}
-                {usageData.daily && usageData.daily.length > 0 && (
-                  <div className="cockpit-card">
-                    <h3 className="text-xs font-semibold text-cockpit-text uppercase tracking-wider mb-4">Uso diário (14 dias)</h3>
-                    <div className="flex items-end gap-1 h-32">
-                      {usageData.daily.map((d: any) => {
-                        const maxCalls = Math.max(...usageData.daily.map((x: any) => x.calls), 1)
-                        const h = (d.calls / maxCalls) * 100
-                        const isToday = d.date === new Date().toISOString().split("T")[0]
-                        return (
-                          <div key={d.date} className="flex-1 flex flex-col items-center gap-1" title={`${d.date}: ${d.calls} calls, $${d.cost.toFixed(4)}`}>
-                            <div className={cn("w-full rounded-t-md transition-all", isToday ? "bg-accent" : d.calls > 0 ? "bg-accent/40" : "bg-cockpit-border-light")} style={{ height: `${Math.max(h, 2)}%` }} />
-                            <span className={cn("text-[8px]", isToday ? "text-accent font-bold" : "text-cockpit-muted")}>{d.date.slice(8)}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* By action breakdown */}
-                {usageData.byAction && usageData.byAction.length > 0 && (
-                  <div className="cockpit-card">
-                    <h3 className="text-xs font-semibold text-cockpit-text uppercase tracking-wider mb-4">Por ação (este mês)</h3>
-                    <div className="space-y-2.5">
-                      {usageData.byAction.map((a: any) => {
-                        const maxCalls = Math.max(...usageData.byAction.map((x: any) => x.calls), 1)
-                        const pct = (a.calls / maxCalls) * 100
-                        const labels: Record<string, string> = {
-                          content_suggestion: "Sugestões de conteúdo", generate_ideas: "Geração de ideias",
-                          evaluate_idea: "Avaliação de ideia", generate_briefing: "Briefing",
-                          generate_hook: "Hooks", generate_script: "Roteiros", generate_titles: "Títulos",
-                          generate_thumbnail: "Thumbnails", generate_description: "Descrições",
-                          generate_editing_notes: "Notas de edição", deep_research: "Pesquisa profunda",
-                          review: "Revisão", generate_research: "Pesquisa",
-                        }
-                        return (
-                          <div key={a.action}>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs text-cockpit-text">{labels[a.action] || a.action}</span>
-                              <div className="flex items-center gap-3">
-                                <span className="text-[10px] text-cockpit-muted">{a.calls} chamadas</span>
-                                <span className="text-[10px] text-accent font-medium">${a.cost.toFixed(4)}</span>
-                              </div>
-                            </div>
-                            <div className="w-full h-2 bg-cockpit-border-light rounded-full overflow-hidden">
-                              <div className="h-full bg-accent/50 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Recent calls */}
-                {usageData.recentCalls && usageData.recentCalls.length > 0 && (
-                  <div className="cockpit-card !p-0 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-cockpit-border">
-                      <h3 className="text-xs font-semibold text-cockpit-text uppercase tracking-wider">Últimas chamadas</h3>
-                    </div>
-                    <table className="w-full">
-                      <thead><tr className="border-b border-cockpit-border">
-                        <th className="text-left text-[10px] font-semibold text-cockpit-muted uppercase px-5 py-2">Ação</th>
-                        <th className="text-right text-[10px] font-semibold text-cockpit-muted uppercase px-3 py-2">Tokens</th>
-                        <th className="text-right text-[10px] font-semibold text-cockpit-muted uppercase px-3 py-2">Custo</th>
-                        <th className="text-right text-[10px] font-semibold text-cockpit-muted uppercase px-3 py-2">Tempo</th>
-                        <th className="text-right text-[10px] font-semibold text-cockpit-muted uppercase px-5 py-2">Quando</th>
-                      </tr></thead>
-                      <tbody>{usageData.recentCalls.map((c: any) => (
-                        <tr key={c.id} className="border-b border-cockpit-border-light hover:bg-cockpit-surface-hover">
-                          <td className="px-5 py-2.5 text-xs text-cockpit-text">{c.action}</td>
-                          <td className="px-3 py-2.5 text-xs text-cockpit-muted text-right">{c.tokens.toLocaleString()}</td>
-                          <td className="px-3 py-2.5 text-xs text-accent text-right font-medium">${c.cost.toFixed(4)}</td>
-                          <td className="px-3 py-2.5 text-xs text-cockpit-muted text-right">{(c.duration / 1000).toFixed(1)}s</td>
-                          <td className="px-5 py-2.5 text-[10px] text-cockpit-muted text-right">{new Date(c.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Pricing info */}
-                <div className="cockpit-card">
-                  <h3 className="text-xs font-semibold text-cockpit-text uppercase tracking-wider mb-3">Referência de preços</h3>
-                  <div className="grid grid-cols-3 gap-3 text-center">
-                    <div className="p-3 bg-cockpit-bg border border-cockpit-border rounded-xl">
-                      <p className="text-[10px] text-cockpit-muted">Modelo</p>
-                      <p className="text-xs font-bold text-cockpit-text mt-1">Claude Sonnet 4.6</p>
-                    </div>
-                    <div className="p-3 bg-cockpit-bg border border-cockpit-border rounded-xl">
-                      <p className="text-[10px] text-cockpit-muted">Input</p>
-                      <p className="text-xs font-bold text-cockpit-text mt-1">$3 / 1M tokens</p>
-                    </div>
-                    <div className="p-3 bg-cockpit-bg border border-cockpit-border rounded-xl">
-                      <p className="text-[10px] text-cockpit-muted">Output</p>
-                      <p className="text-xs font-bold text-cockpit-text mt-1">$15 / 1M tokens</p>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        {tab === "usage" && <UsageTab usageData={usageData} />}
 
       </div>
 
