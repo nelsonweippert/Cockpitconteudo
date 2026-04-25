@@ -1,15 +1,12 @@
-import { auth } from "@/lib/auth"
-import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { TemasClient, type TermView } from "./TemasClient"
+import { requireUserId } from "../_lib/auth-helpers"
 
 export const metadata = { title: "Temas Monitorados · Content Hub" }
 export const dynamic = "force-dynamic"
 
 export default async function TemasPage() {
-  const session = await auth()
-  if (!session?.user?.id) redirect("/login")
-  const userId = session.user.id
+  const userId = await requireUserId()
 
   const terms = await db.monitorTerm.findMany({
     where: { userId },

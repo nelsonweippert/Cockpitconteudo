@@ -1,20 +1,18 @@
-import { auth } from "@/lib/auth"
-import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { VelocityClient } from "./VelocityClient"
+import { requireUserId } from "../_lib/auth-helpers"
 
 export const metadata = { title: "Velocity · Content Hub" }
 
 export default async function VelocityPage() {
-  const session = await auth()
-  if (!session?.user?.id) redirect("/login")
+  const userId = await requireUserId()
 
   // Vídeos do user (origin=own) com snapshots nos últimos 7 dias.
   // Pega o snapshot mais recente de cada vídeo + a curva pra desenhar
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000)
   const allSnapshots = await db.videoSnapshot.findMany({
     where: {
-      userId: session.user.id,
+      userId,
       origin: "own",
       publishedAt: { gte: sevenDaysAgo },
     },
@@ -52,7 +50,7 @@ export default async function VelocityPage() {
 
   // Tem canal conectado?
   const hasConnection = await db.platformConnection.count({
-    where: { userId: session.user.id, isActive: true, platform: "youtube" },
+    where: { userId, isActive: true, platform: "youtube" },
   })
 
   return <VelocityClient videos={videos} hasConnection={hasConnection > 0} />

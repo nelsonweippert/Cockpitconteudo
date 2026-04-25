@@ -1,16 +1,14 @@
-import { auth } from "@/lib/auth"
-import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { CanalClient } from "./CanalClient"
+import { requireUserId } from "../_lib/auth-helpers"
 
 export const metadata = { title: "Canal · Content Hub" }
 
 export default async function CanalPage() {
-  const session = await auth()
-  if (!session?.user?.id) redirect("/login")
+  const userId = await requireUserId()
 
   const connections = await db.platformConnection.findMany({
-    where: { userId: session.user.id },
+    where: { userId },
     orderBy: { connectedAt: "desc" },
   })
 
@@ -18,7 +16,7 @@ export default async function CanalPage() {
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
   const allSnapshots = await db.channelSnapshot.findMany({
     where: {
-      userId: session.user.id,
+      userId,
       takenAt: { gte: since },
     },
     orderBy: { takenAt: "asc" },

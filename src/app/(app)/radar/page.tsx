@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth"
-import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { RadarClient, type RadarEvidence } from "./RadarClient"
+import { requireUserId } from "../_lib/auth-helpers"
 
 export const metadata = { title: "Radar · Content Hub" }
 
@@ -10,9 +9,7 @@ export const metadata = { title: "Radar · Content Hub" }
 export const dynamic = "force-dynamic"
 
 export default async function RadarPage() {
-  const session = await auth()
-  if (!session?.user?.id) redirect("/login")
-  const userId = session.user.id
+  const userId = await requireUserId()
 
   const [evidences, totalCount, processedCount, byTerm] = await Promise.all([
     db.newsEvidence.findMany({

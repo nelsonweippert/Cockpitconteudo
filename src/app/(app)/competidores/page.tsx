@@ -1,16 +1,14 @@
-import { auth } from "@/lib/auth"
-import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { CompetidoresClient } from "./CompetidoresClient"
+import { requireUserId } from "../_lib/auth-helpers"
 
 export const metadata = { title: "Competidores · Content Hub" }
 
 export default async function CompetidoresPage() {
-  const session = await auth()
-  if (!session?.user?.id) redirect("/login")
+  const userId = await requireUserId()
 
   const competitors = await db.competitorChannel.findMany({
-    where: { userId: session.user.id, isActive: true },
+    where: { userId, isActive: true },
     orderBy: { addedAt: "desc" },
   })
 
@@ -18,7 +16,7 @@ export default async function CompetidoresPage() {
   const since = new Date(Date.now() - 72 * 3600 * 1000)
   const recentOutliers = await db.videoSnapshot.findMany({
     where: {
-      userId: session.user.id,
+      userId,
       origin: "competitor",
       takenAt: { gte: since },
       outlierMultiplier: { gte: 2.0 },
