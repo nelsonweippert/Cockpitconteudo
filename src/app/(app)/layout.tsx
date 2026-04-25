@@ -10,24 +10,50 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const navItems = [
-  { label: "Visão Geral", href: "/visao-geral", icon: BarChart3 },
-
-  { label: "Temas", href: "/temas", icon: Target },
-  { label: "Ideias", href: "/ideias", icon: Lightbulb },
-  { label: "Funil", href: "/funil", icon: Workflow },
-  { label: "Skills", href: "/skills", icon: BookOpen },
-
-  { label: "Coach", href: "/coach", icon: MessageSquare },
-  { label: "Radar", href: "/radar", icon: Radar },
-  { label: "Keyword", href: "/keyword", icon: Search },
-
-  { label: "Canal", href: "/canal", icon: Tv },
-  { label: "Velocity", href: "/velocity", icon: ZapIcon },
-  { label: "Competidores", href: "/competidores", icon: Eye },
-
-  { label: "Bot", href: "/bot", icon: Bell },
-  { label: "Uso da API", href: "/uso", icon: Activity },
+const navSections: { label: string | null; items: { label: string; href: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> }[] }[] = [
+  {
+    label: null,
+    items: [
+      { label: "Visão Geral", href: "/visao-geral", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Produção",
+    items: [
+      { label: "Ideias", href: "/ideias", icon: Lightbulb },
+      { label: "Funil", href: "/funil", icon: Workflow },
+      { label: "Coach", href: "/coach", icon: MessageSquare },
+    ],
+  },
+  {
+    label: "Análise",
+    items: [
+      { label: "Velocity", href: "/velocity", icon: ZapIcon },
+      { label: "Competidores", href: "/competidores", icon: Eye },
+      { label: "Radar", href: "/radar", icon: Radar },
+    ],
+  },
+  {
+    label: "Pesquisa",
+    items: [
+      { label: "Keyword", href: "/keyword", icon: Search },
+      { label: "Skills", href: "/skills", icon: BookOpen },
+    ],
+  },
+  {
+    label: "Configuração",
+    items: [
+      { label: "Temas", href: "/temas", icon: Target },
+      { label: "Canal", href: "/canal", icon: Tv },
+      { label: "Bot", href: "/bot", icon: Bell },
+    ],
+  },
+  {
+    label: "Sistema",
+    items: [
+      { label: "Uso da API", href: "/uso", icon: Activity },
+    ],
+  },
 ]
 
 type Theme = "day" | "sunset" | "night"
@@ -82,27 +108,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Nav */}
-            <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-              {navItems.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all",
-                      isActive
-                        ? "bg-accent/10 text-accent-dark"
-                        : "text-cockpit-muted hover:text-cockpit-text hover:bg-cockpit-surface-hover"
-                    )}
-                  >
-                    <item.icon size={18} strokeWidth={isActive ? 2 : 1.5} />
-                    {item.label}
-                    {isActive && <ChevronRight size={14} className="ml-auto" />}
-                  </Link>
-                )
-              })}
+            <nav className="flex-1 px-3 py-4 overflow-y-auto">
+              {navSections.map((section, idx) => (
+                <div key={section.label ?? `section-${idx}`} className={idx > 0 ? "mt-5" : ""}>
+                  {section.label && (
+                    <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-cockpit-muted/80">
+                      {section.label}
+                    </p>
+                  )}
+                  <div className="space-y-0.5">
+                    {section.items.map((item) => {
+                      const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setSidebarOpen(false)}
+                          className={cn(
+                            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all",
+                            isActive
+                              ? "bg-accent/10 text-accent-dark"
+                              : "text-cockpit-muted hover:text-cockpit-text hover:bg-cockpit-surface-hover"
+                          )}
+                        >
+                          <item.icon size={18} strokeWidth={isActive ? 2 : 1.5} />
+                          {item.label}
+                          {isActive && <ChevronRight size={14} className="ml-auto" />}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </nav>
 
             {/* Footer */}
