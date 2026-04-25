@@ -12,16 +12,20 @@ import { cn } from "@/lib/utils"
 
 const navItems = [
   { label: "Visão Geral", href: "/visao-geral", icon: BarChart3 },
+
   { label: "Temas", href: "/temas", icon: Target },
   { label: "Ideias", href: "/ideias", icon: Lightbulb },
   { label: "Funil", href: "/funil", icon: Workflow },
   { label: "Skills", href: "/skills", icon: BookOpen },
+
+  { label: "Coach", href: "/coach", icon: MessageSquare },
   { label: "Radar", href: "/radar", icon: Radar },
   { label: "Keyword", href: "/keyword", icon: Search },
-  { label: "Coach", href: "/coach", icon: MessageSquare },
+
   { label: "Canal", href: "/canal", icon: Tv },
   { label: "Velocity", href: "/velocity", icon: ZapIcon },
   { label: "Competidores", href: "/competidores", icon: Eye },
+
   { label: "Bot", href: "/bot", icon: Bell },
   { label: "Uso da API", href: "/uso", icon: Activity },
 ]
