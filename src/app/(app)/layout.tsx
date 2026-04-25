@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
 import {
   Sun, Sunset, Moon, Menu, X, ChevronRight, LogOut, Layers,
-  BarChart3, Target, Lightbulb, Workflow, BookOpen, Radar, Activity, Bell, MessageSquare, Tv, Search,
+  BarChart3, Target, Lightbulb, Workflow, BookOpen, Radar, Activity, Bell, MessageSquare, Tv, Search, Eye, Zap as ZapIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -20,6 +20,8 @@ const navItems = [
   { label: "Keyword", href: "/keyword", icon: Search },
   { label: "Coach", href: "/coach", icon: MessageSquare },
   { label: "Canal", href: "/canal", icon: Tv },
+  { label: "Velocity", href: "/velocity", icon: ZapIcon },
+  { label: "Competidores", href: "/competidores", icon: Eye },
   { label: "Bot", href: "/bot", icon: Bell },
   { label: "Uso da API", href: "/uso", icon: Activity },
 ]

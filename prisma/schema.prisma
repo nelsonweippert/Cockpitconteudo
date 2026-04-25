@@ -21,17 +21,19 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  areas                Area[]
-  contents             Content[]
-  skillSources         SkillSource[]
-  apiUsage             ApiUsage[]
-  monitorTerms         MonitorTerm[]
-  ideaFeed             IdeaFeed[]
-  newsEvidence         NewsEvidence[]
-  themeDiscoveryRuns   ThemeDiscoveryRun[]
-  coachConversations   CoachConversation[]
-  platformConnections  PlatformConnection[]
-  channelSnapshots     ChannelSnapshot[]
+  areas                 Area[]
+  contents              Content[]
+  skillSources          SkillSource[]
+  apiUsage              ApiUsage[]
+  monitorTerms          MonitorTerm[]
+  ideaFeed              IdeaFeed[]
+  newsEvidence          NewsEvidence[]
+  themeDiscoveryRuns    ThemeDiscoveryRun[]
+  coachConversations    CoachConversation[]
+  platformConnections   PlatformConnection[]
+  channelSnapshots      ChannelSnapshot[]
+  competitorChannels    CompetitorChannel[]
+  videoSnapshots        VideoSnapshot[]
 
   @@map("users")
 }
@@ -423,4 +425,75 @@ model ChannelSnapshot {
   @@index([platformConnectionId, takenAt])
   @@index([userId, takenAt])
   @@map("channel_snapshots")
+}
+
+// ========================================
+// CompetitorChannel — canais EXTERNOS que o user monitora (sem OAuth)
+// Diferente de PlatformConnection: aqui só lemos dados públicos.
+// ========================================
+
+model CompetitorChannel {
+  id           String   @id @default(cuid())
+  userId       String
+  platform     String   // "youtube"
+  externalId   String   // channelId
+  externalName String
+  externalHandle String?
+  thumbnailUrl String?
+  subscribers  BigInt?
+  totalViews   BigInt?
+  videoCount   Int?
+  // Notas que o user toma sobre esse competidor (POSICIONAMENTO, ângulos, etc.)
+  notes        String?  @db.Text
+  isActive     Boolean  @default(true)
+  addedAt      DateTime @default(now())
+  lastSyncAt   DateTime?
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videos    VideoSnapshot[]
+
+  @@unique([userId, platform, externalId])
+  @@index([userId, isActive])
+  @@map("competitor_channels")
+}
+
+// ========================================
+// VideoSnapshot — métricas de UM vídeo num momento.
+// Serve tanto pra vídeos do canal próprio (velocity) quanto de competidores.
+// Múltiplos snapshots por (videoId, takenAt) compõem time series.
+// ========================================
+
+model VideoSnapshot {
+  id           String   @id @default(cuid())
+  userId       String
+  // Origem: own (canal conectado do user) ou competitor
+  origin       String   // "own" | "competitor"
+  // Se origin=competitor, aponta pro CompetitorChannel
+  competitorChannelId String?
+  // Identificação do vídeo
+  videoId      String   // YouTube videoId
+  videoTitle   String
+  channelId    String   // pra agrupar (own.externalId ou competitor.externalId)
+  publishedAt  DateTime
+  durationSec  Int?
+  thumbnailUrl String?
+  // Métricas no momento do snapshot
+  views        BigInt
+  likes        Int
+  comments     Int
+  takenAt      DateTime @default(now())
+  // Sinais derivados (preenchidos pelo poller)
+  // viewsPerHour calculado a partir do snapshot anterior, se existir
+  viewsPerHour Float?
+  // multiplicador vs mediana do canal pra esse tempo-de-vida
+  outlierMultiplier Float?
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competitor CompetitorChannel? @relation(fields: [competitorChannelId], references: [id], onDelete: SetNull)
+
+  @@index([userId, origin, takenAt])
+  @@index([videoId, takenAt])
+  @@index([channelId, takenAt])
+  @@index([competitorChannelId, takenAt])
+  @@map("video_snapshots")
 }

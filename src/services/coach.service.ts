@@ -67,6 +67,20 @@ export type CoachContext = {
     delta7d: { subs: number; views: number; videos: number } | null
     delta30d: { subs: number; views: number; videos: number } | null
   }>
+  hotVideos: Array<{
+    title: string
+    publishedAt: string
+    views: number
+    multiplier: number | null
+    status: "viral" | "accelerating" | "stable" | "decelerating"
+  }>
+  competitorOutliers: Array<{
+    competitorName: string
+    title: string
+    views: number
+    multiplier: number
+    publishedAt: string
+  }>
   apiUsage: {
     last30dCostUsd: number
     last30dCalls: number
@@ -127,6 +141,31 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
       where: { userId, takenAt: { gte: thirtyDaysAgo } },
       orderBy: { takenAt: "asc" },
       select: { platformConnectionId: true, takenAt: true, subscribers: true, totalViews: true, videoCount: true },
+    }),
+  ])
+
+  // Vídeos quentes do user (próprios) + outliers de competidores — em queries separadas
+  const [ownVideoSnapshots, competitorOutlierRows] = await Promise.all([
+    // Pega o snapshot MAIS RECENTE de cada vídeo "own" publicado nos últimos 7d
+    db.videoSnapshot.findMany({
+      where: {
+        userId,
+        origin: "own",
+        publishedAt: { gte: sevenDaysAgo },
+      },
+      orderBy: { takenAt: "desc" },
+      take: 50,
+    }),
+    db.videoSnapshot.findMany({
+      where: {
+        userId,
+        origin: "competitor",
+        takenAt: { gte: sevenDaysAgo },
+        outlierMultiplier: { gte: 2.0 },
+      },
+      orderBy: { outlierMultiplier: "desc" },
+      take: 8,
+      include: { competitor: { select: { externalName: true } } },
     }),
   ])
 
@@ -211,6 +250,32 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
     }
   })
 
+  // Hot videos (own) — pega o snapshot mais recente por videoId, dedupe
+  const seenHotIds = new Set<string>()
+  const hotVideos = ownVideoSnapshots
+    .filter((s) => {
+      if (seenHotIds.has(s.videoId)) return false
+      seenHotIds.add(s.videoId)
+      return true
+    })
+    .slice(0, 10)
+    .map((s) => {
+      const m = s.outlierMultiplier
+      const status: "viral" | "accelerating" | "stable" | "decelerating" =
+        m == null ? "stable" :
+        m >= 4 ? "viral" :
+        m >= 1.3 ? "accelerating" :
+        m <= 0.5 ? "decelerating" :
+        "stable"
+      return {
+        title: s.videoTitle,
+        publishedAt: s.publishedAt.toISOString(),
+        views: Number(s.views),
+        multiplier: m,
+        status,
+      }
+    })
+
   return {
     user: { name: user.name, email: user.email },
     areas,
@@ -229,6 +294,14 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
     })),
     contentStats: { total: allContents.length, byPhase, publishedLast30d, inProduction },
     channels,
+    hotVideos,
+    competitorOutliers: competitorOutlierRows.map((o) => ({
+      competitorName: o.competitor?.externalName ?? "—",
+      title: o.videoTitle,
+      views: Number(o.views),
+      multiplier: o.outlierMultiplier ?? 1,
+      publishedAt: o.publishedAt.toISOString(),
+    })),
     apiUsage: { last30dCostUsd, last30dCalls: usage30d.length, topActions },
     generatedAt: now.toISOString(),
   }
@@ -336,6 +409,25 @@ function renderContext(ctx: CoachContext): string {
     lines.push(``)
   }
 
+  // Vídeos quentes do user
+  if (ctx.hotVideos.length > 0) {
+    lines.push(`## Seus vídeos publicados nos últimos 7 dias`)
+    for (const v of ctx.hotVideos) {
+      const flag = v.status === "viral" ? "🔥 VIRAL" : v.status === "accelerating" ? "↗ ACELERANDO" : v.status === "decelerating" ? "↘ DESACELERANDO" : "estável"
+      lines.push(`- "${v.title}" — ${v.views.toLocaleString("pt-BR")} views${v.multiplier != null ? ` (${v.multiplier.toFixed(2)}× mediana)` : ""} [${flag}]`)
+    }
+    lines.push(``)
+  }
+
+  // Outliers de competidores
+  if (ctx.competitorOutliers.length > 0) {
+    lines.push(`## Vídeos de competidores quebrando a curva (últimos 7d)`)
+    for (const o of ctx.competitorOutliers) {
+      lines.push(`- [${o.competitorName}] "${o.title}" — ${o.views.toLocaleString("pt-BR")} views, ${o.multiplier.toFixed(1)}× a mediana`)
+    }
+    lines.push(``)
+  }
+
   // Custo de IA
   lines.push(`## Uso de IA (30 dias)`)
   lines.push(`- Custo: $${ctx.apiUsage.last30dCostUsd.toFixed(4)} em ${ctx.apiUsage.last30dCalls} chamadas`)
@@ -387,7 +479,17 @@ QUANDO O USUÁRIO PERGUNTA SOBRE PERFORMANCE / CRESCIMENTO DO CANAL
 - Se delta30d está positivo mas baixo, sinaliza ("subiu 80 subs em 30d, ritmo de ~2.5/dia").
 - Se publicou X vídeos no período (delta videos) vs publishedLast30d do funil, valide consistência.
 - Se NÃO tem canal conectado, instrua: "vá em /canal e clique em Conectar canal do YouTube".
-- Se snapshots < 2, diga que precisa de mais alguns dias pra ter delta confiável.`
+- Se snapshots < 2, diga que precisa de mais alguns dias pra ter delta confiável.
+
+QUANDO O USUÁRIO PERGUNTA SOBRE VÍDEOS RECENTES OU "ESTÁ PEGANDO?"
+- Use "Seus vídeos publicados nos últimos 7 dias". Status VIRAL = 4×+ a mediana — mencionar destacado.
+- Status ACELERANDO = bom sinal. DESACELERANDO = pode ter morrido.
+- Se nenhum vídeo recente, diga isso.
+
+QUANDO O USUÁRIO PERGUNTA SOBRE COMPETIDORES OU "O QUE TÁ BOMBANDO NO NICHO?"
+- Use "Vídeos de competidores quebrando a curva". Multiplier alto = sinal de tema ressonando agora.
+- Sugira esses títulos como inspiração pra próximas ideias (sem copiar, mas observar ângulo).
+- Se sem competitor outliers, diga que ou os competidores estão estáveis ou faltam canais monitorados.`
 
 // ─── Conversação: adiciona msg e gera resposta streaming ────────────────
 
