@@ -390,7 +390,148 @@ Nenhum tema habilitado pro digest\\. Em /bot você escolhe quais temas aparecem 
     }
   }
 
+  // Bloco final: "ideias prontas pra produzir hoje" (curador sobre IdeaFeed acumulado)
+  try {
+    const ideasBlock = await buildDailyIdeasMessage(userId)
+    if (ideasBlock) {
+      const sent = await sendMessage({ chatId: user.telegramChatId, text: ideasBlock })
+      if (sent.ok) result.messagesSent++
+    }
+  } catch (err) {
+    console.error("[daily-digest] bloco de ideias falhou:", err)
+    result.errors.push(`ideias-do-dia: ${err instanceof Error ? err.message : "erro"}`)
+  }
+
   return result
+}
+
+// ─── Bloco "ideias prontas pra produzir hoje" ──────────────────────────
+//
+// Faz curadoria sobre o IdeaFeed acumulado: pega ideias não-usadas, não-descartadas,
+// dos últimos 7 dias, com pioneerScore alto, e pede ao Haiku pra escolher 3-5
+// que merecem virar conteúdo HOJE — considerando o que já está em produção
+// (evita sugerir tema parecido com o que já tá em ELABORATION).
+
+const DailyIdeasPickSchema = z.object({
+  picks: z.array(z.object({
+    title: z.string(),
+    why: z.string().describe("1 frase curtíssima: por que essa ideia merece virar conteúdo hoje (timing, pioneirismo, encaixe com áreas)"),
+    angle: z.string().nullable().describe("Ângulo sugerido pro vídeo, se a ideia original tiver um forte"),
+  })).max(5),
+  digestNote: z.string().describe("1-2 frases sobre o estado da fila do criador (cheia, vazia, padrão observado)"),
+})
+
+async function buildDailyIdeasMessage(userId: string): Promise<string | null> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000)
+  const [ideas, contentsInProd, areas] = await Promise.all([
+    db.ideaFeed.findMany({
+      where: { userId, isDiscarded: false, isUsed: false, createdAt: { gte: sevenDaysAgo } },
+      orderBy: [{ pioneerScore: "desc" }, { createdAt: "desc" }],
+      take: 20,
+      select: {
+        title: true, summary: true, angle: true, term: true,
+        pioneerScore: true, viralScore: true, isFavorite: true,
+        sourceUrl: true,
+      },
+    }),
+    db.content.findMany({
+      where: { userId, isArchived: false, phase: { in: ["IDEATION", "ELABORATION", "BRIEFING"] } },
+      orderBy: { updatedAt: "desc" },
+      select: { title: true, phase: true },
+      take: 10,
+    }),
+    db.area.findMany({
+      where: { userId, isArchived: false },
+      select: { name: true, description: true },
+    }),
+  ])
+
+  if (ideas.length === 0) return null // sem ideias, não envia bloco
+
+  const ideasText = ideas.map((i, idx) => {
+    const flags: string[] = []
+    if (i.isFavorite) flags.push("⭐")
+    if (i.pioneerScore != null) flags.push(`pioneer=${i.pioneerScore}`)
+    if (i.viralScore != null) flags.push(`viral=${i.viralScore}`)
+    return `${idx + 1}. [${i.term}] "${i.title}"${flags.length ? ` (${flags.join(", ")})` : ""}\n   ${i.summary?.slice(0, 200) ?? ""}\n   ${i.angle ? `Ângulo: ${i.angle.slice(0, 120)}` : ""}`
+  }).join("\n\n")
+
+  const inProdText = contentsInProd.length > 0
+    ? contentsInProd.map((c) => `- "${c.title}" [${c.phase}]`).join("\n")
+    : "(funil vazio)"
+
+  const areasText = areas.length > 0
+    ? areas.map((a) => `- ${a.name}${a.description ? `: ${a.description}` : ""}`).join("\n")
+    : "(sem áreas definidas)"
+
+  const system = `Você é EDITOR-CHEFE selecionando o que o criador vai PRODUZIR HOJE da pilha de ideias acumuladas.
+
+REGRAS
+- Escolha 3-5 ideias que mais merecem virar conteúdo agora.
+- PRIORIZE: ideias com pioneerScore alto, favoritadas (⭐), com timing forte.
+- EVITE: sugerir ideia muito parecida com algo já em produção (ELABORATION/BRIEFING).
+- VIÉS DE ÁREAS: as áreas do criador são pra contextualizar — sugira ideias que conversam com essas áreas.
+- digestNote: 1-2 frases sobre o estado da fila ("você tem 12 ideias pendentes, fila grande"), padrões ("4 das 5 que escolhi são do tema X — sinal forte"), ou alerta ("quase nada na fila essa semana").
+- Cada "why" tem que ser CONCRETO: timing, ineditismo, ângulo específico. Nunca genérico.
+- PT-BR sempre. Sem travessões.
+
+FORMATO: JSON conforme schema.`
+
+  const userPrompt = `ÁREAS DO CRIADOR:
+${areasText}
+
+JÁ EM PRODUÇÃO (não duplique tema):
+${inProdText}
+
+PILHA DE IDEIAS (últimos 7 dias, não-usadas, ordenadas por pioneerScore):
+${ideasText}
+
+Escolha 3-5 ideias que merecem virar conteúdo HOJE.`
+
+  const start = Date.now()
+  const response = await anthropic.messages.create({
+    model: DIGEST_MODEL,
+    max_tokens: 1500,
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    output_config: { format: zodOutputFormat(DailyIdeasPickSchema) },
+    messages: [{ role: "user", content: userPrompt }],
+  })
+  const durationMs = Date.now() - start
+
+  const tb = [...response.content].reverse().find((b): b is Anthropic.TextBlock => b.type === "text")
+  if (!tb) return null
+
+  let parsed: z.infer<typeof DailyIdeasPickSchema>
+  try { parsed = DailyIdeasPickSchema.parse(JSON.parse(tb.text)) }
+  catch (err) {
+    console.error("[daily-ideas] parse falhou:", err, "raw:", tb.text.slice(0, 300))
+    return null
+  }
+
+  trackUsage(DIGEST_MODEL, "daily_ideas_pick", response.usage.input_tokens, response.usage.output_tokens, durationMs, userId, {
+    pickedFrom: ideas.length,
+    picksOut: parsed.picks.length,
+  }).catch(() => {})
+
+  if (parsed.picks.length === 0) return null
+
+  // Monta mensagem MarkdownV2
+  const note = escapeMdV2(parsed.digestNote)
+  let msg = `🎬 *Pra produzir hoje*
+
+_${note}_
+
+`
+  parsed.picks.forEach((p, i) => {
+    const dot = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "•"
+    msg += `${dot} *${escapeMdV2(p.title)}*
+↳ ${escapeMdV2(p.why)}${p.angle ? `\n  ↳ Ângulo: ${escapeMdV2(p.angle)}` : ""}
+
+`
+  })
+  msg += `_Abrir: cockpit\\.\\.\\.\\/ideias_`
+
+  return msg
 }
 
 // Pra cron: roda digest pra TODOS users com chatId vinculado.

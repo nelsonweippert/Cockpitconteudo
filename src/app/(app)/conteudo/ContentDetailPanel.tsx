@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 import { updateContentAction, advanceContentPhaseAction, archiveContentAction, getContentReferencesAction } from "@/app/actions/content.actions"
 import { CONTENT_SKILLS, SKILL_LIST, type SkillId } from "@/config/content-skills"
 import type { Area, ContentPhase } from "@/types"
+import { SeoScorePanel } from "./SeoScorePanel"
 
 type RefCard = {
   id: string
@@ -44,9 +45,9 @@ const PHASES: { id: ContentPhase; label: string; icon: React.ElementType }[] = [
   { id: "PUBLISHED", label: "Publicado", icon: Send },
 ]
 
-const ELAB_SECTIONS = ["pesquisa", "hook", "roteiro", "titulo", "thumbnail", "descricao"] as const
+const ELAB_SECTIONS = ["pesquisa", "hook", "roteiro", "titulo", "thumbnail", "descricao", "score"] as const
 type ElabSection = typeof ELAB_SECTIONS[number]
-const ELAB_LABEL: Record<ElabSection, string> = { pesquisa: "Pesquisa", hook: "Hook", roteiro: "Roteiro", titulo: "Título", thumbnail: "Thumbnail", descricao: "Descrição" }
+const ELAB_LABEL: Record<ElabSection, string> = { pesquisa: "Pesquisa", hook: "Hook", roteiro: "Roteiro", titulo: "Título", thumbnail: "Thumbnail", descricao: "Descrição", score: "SEO Score" }
 
 interface Props {
   content: Content; areas: Area[]
@@ -495,7 +496,15 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
               {/* Sub-sections */}
               <div className="flex items-center gap-1 bg-cockpit-border-light rounded-xl p-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
                 {ELAB_SECTIONS.map((s) => {
-                  const hasContent = s === "pesquisa" ? !!research : s === "hook" ? !!hook : s === "roteiro" ? !!script : s === "titulo" ? true : s === "thumbnail" ? !!thumbnailNotes : !!description
+                  const hasContent =
+                    s === "pesquisa" ? !!research :
+                    s === "hook" ? !!hook :
+                    s === "roteiro" ? !!script :
+                    s === "titulo" ? true :
+                    s === "thumbnail" ? !!thumbnailNotes :
+                    s === "descricao" ? !!description :
+                    s === "score" ? false : // score é dinâmico — não mostra dot
+                    false
                   return (
                     <button key={s} onClick={() => { setActiveSection(s); setAiResult(null); setAiOptions(null) }}
                       className={cn("px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1",
@@ -553,6 +562,19 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
                 <AiPanel acceptField="description" />
                 <Field label="Descrição / Caption" value={description} onChange={setDescription} field="description" placeholder="Descrição para a plataforma..." rows={8} />
               </>)}
+
+              {activeSection === "score" && (
+                <SeoScorePanel
+                  title={title}
+                  hook={hook}
+                  script={script}
+                  description={description}
+                  targetDuration={targetDuration}
+                  platform={content.platform}
+                  format={content.format}
+                  skill={content.skill}
+                />
+              )}
             </>)}
 
             {/* ═══ BRIEFING (resumo para gravação) ═══ */}
