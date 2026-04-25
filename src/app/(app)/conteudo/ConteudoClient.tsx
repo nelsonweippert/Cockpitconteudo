@@ -13,14 +13,14 @@ import { createContentAction, archiveContentAction, advanceContentPhaseAction } 
 import { getSkillSourcesAction, addSkillSourceAction, deleteSkillSourceAction } from "@/app/actions/skill.actions"
 import { getMonitorTermsAction, addMonitorTermAction, deleteMonitorTermAction, updateMonitorTermIntentAction, getIdeasAction, discardIdeaAction, markIdeaUsedAction, generateIdeasNowAction, generateIdeaForThemeAction, toggleIdeaFavoriteAction } from "@/app/actions/idea.actions"
 import { CONTENT_SKILLS, SKILL_LIST, ALL_SKILLS, type SkillId } from "@/config/content-skills"
-import type { Area, ContentPhase, Platform, ContentFormat } from "@/types"
-import { DatePicker } from "@/components/ui/DatePicker"
+import type { Area, ContentPhase } from "@/types"
 import { ContentDetailPanel } from "./ContentDetailPanel"
 import { IdeaCard } from "./IdeaCard"
 import { TermSourcesManager, type TermSource } from "./TermSourcesManager"
 import { PHASE_LABEL, PHASE_COLOR, SKILL_ICON, PIPELINE_PHASES } from "./constants"
 import { OverviewTab } from "./components/OverviewTab"
 import { UsageTab } from "./components/UsageTab"
+import { CreationModal } from "./components/CreationModal"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Content = any
@@ -63,12 +63,9 @@ export function ConteudoClient({
   const [tab, setTab] = useState<Tab>(initialTab)
   const [viewMode, setViewMode] = useState<ViewMode>("pipeline")
 
-  // Creation flow
+  // Modal de criação (state interna está em CreationModal)
   const [showCreate, setShowCreate] = useState(false)
-  const [createStep, setCreateStep] = useState<"skill" | "details">("skill")
-  const [selectedSkill, setSelectedSkill] = useState<SkillId | null>(null)
-  const [newTitle, setNewTitle] = useState("")
-  const [newHook, setNewHook] = useState("")
+
   // Usage dashboard
   const [usageData, setUsageData] = useState<any>(null)
   const [usageLoaded, setUsageLoaded] = useState(false)
@@ -78,10 +75,6 @@ export function ConteudoClient({
       fetch("/api/usage").then((r) => r.ok ? r.json() : null).then((data) => { if (data) setUsageData(data); setUsageLoaded(true) })
     }
   }, [tab, usageLoaded])
-  const [newPlannedDate, setNewPlannedDate] = useState("")
-  const [newAreaIds, setNewAreaIds] = useState<string[]>([])
-  const [newPlatform, setNewPlatform] = useState<Platform>("YOUTUBE")
-  const [newFormat, setNewFormat] = useState<ContentFormat>("LONG_VIDEO")
 
   // Filters
   const [search, setSearch] = useState("")
@@ -379,32 +372,7 @@ export function ConteudoClient({
 
   function clearFilters() { setSearch(""); setSkillFilters([]); setPhaseFilters([]); setAreaFilters([]) }
 
-  // ── Creation ────────────────────────────────────────────────────────────
 
-  function resetCreate() {
-    setShowCreate(false); setCreateStep("skill"); setSelectedSkill(null)
-    setNewTitle(""); setNewHook(""); setNewPlannedDate(""); setNewAreaIds([]); setNewPlatform("YOUTUBE"); setNewFormat("LONG_VIDEO")
-  }
-
-  function selectSkill(skill: SkillId) {
-    setSelectedSkill(skill)
-    if (skill === "SHORT_VIDEO") { setNewPlatform("TIKTOK"); setNewFormat("SHORT") }
-    else if (skill === "LONG_VIDEO") { setNewPlatform("YOUTUBE"); setNewFormat("LONG_VIDEO") }
-    else if (skill === "INSTAGRAM") { setNewPlatform("INSTAGRAM"); setNewFormat("POST") }
-    setCreateStep("details")
-  }
-
-  function handleCreate() {
-    if (!newTitle.trim()) return
-    startTransition(async () => {
-      const result = await createContentAction({
-        title: newTitle, platform: newPlatform, format: newFormat,
-        skill: selectedSkill, hook: newHook || undefined,
-        plannedDate: newPlannedDate ? new Date(newPlannedDate) : null, areaIds: newAreaIds,
-      })
-      if (result.success) { setContents((prev) => [result.data as Content, ...prev]); resetCreate() }
-    })
-  }
 
   function handleArchive(id: string) {
     startTransition(async () => { const r = await archiveContentAction(id); if (r.success) setContents((prev) => prev.filter((c) => c.id !== id)) })
@@ -580,49 +548,11 @@ export function ConteudoClient({
 
         {/* Creation flow (appears in any tab) */}
         {showCreate && (
-          <div className="cockpit-card space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-cockpit-text">{createStep === "skill" ? "Escolha o tipo de conteúdo" : `Novo ${CONTENT_SKILLS[selectedSkill!].label}`}</h2>
-              <button onClick={resetCreate} className="p-1 text-cockpit-muted hover:text-cockpit-text rounded-lg"><X size={16} /></button>
-            </div>
-            {createStep === "skill" && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {SKILL_LIST.map((s) => (
-                  <button key={s.id} onClick={() => selectSkill(s.id)} className="cockpit-card !p-4 text-left hover:border-accent/40 transition-colors group">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-2xl">{s.icon}</span>
-                      <div><p className="text-sm font-semibold text-cockpit-text group-hover:text-accent">{s.label}</p><p className="text-[10px] text-cockpit-muted">{s.description}</p></div>
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-2">{s.phases.slice(0, 5).map((p) => (<span key={p.id} className="text-[9px] px-1.5 py-0.5 bg-cockpit-border-light rounded text-cockpit-muted">{p.label}</span>))}{s.phases.length > 5 && <span className="text-[9px] text-cockpit-muted">+{s.phases.length - 5}</span>}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {createStep === "details" && selectedSkill && (
-              <div className="space-y-4">
-                <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Ideia do conteúdo *  (ex: Como ganhar dinheiro com IA em 2026)" className="w-full px-3 py-2.5 bg-cockpit-bg border border-cockpit-border rounded-xl text-sm text-cockpit-text placeholder:text-cockpit-muted focus:outline-none focus:ring-2 focus:ring-accent/30" autoFocus />
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-xs text-cockpit-muted mb-1.5">Data planejada</label><DatePicker value={newPlannedDate} onChange={setNewPlannedDate} /></div>
-                  <div><label className="block text-xs text-cockpit-muted mb-1.5">Plataforma</label><select value={newPlatform} onChange={(e) => setNewPlatform(e.target.value as Platform)} className="w-full px-3 py-2 bg-cockpit-bg border border-cockpit-border rounded-xl text-sm text-cockpit-text focus:outline-none focus:ring-2 focus:ring-accent/30"><option value="YOUTUBE">YouTube</option><option value="INSTAGRAM">Instagram</option><option value="TIKTOK">TikTok</option><option value="TWITCH">Twitch</option><option value="OTHER">Outro</option></select></div>
-                </div>
-                {areas.length > 0 && (
-                  <div><label className="block text-xs text-cockpit-muted mb-1.5">Áreas</label><div className="flex flex-wrap gap-1.5">{areas.map((a) => (<button key={a.id} type="button" onClick={() => setNewAreaIds((prev) => prev.includes(a.id) ? prev.filter((id) => id !== a.id) : [...prev, a.id])} className={cn("flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all", newAreaIds.includes(a.id) ? "border-transparent text-white" : "border-cockpit-border text-cockpit-muted")} style={newAreaIds.includes(a.id) ? { backgroundColor: a.color } : {}}>{a.icon} {a.name}</button>))}</div></div>
-                )}
-                {CONTENT_SKILLS[selectedSkill].phases[0]?.tips && (
-                  <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl">
-                    <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-1.5">💡 Dicas para ideação</p>
-                    <ul className="space-y-1">{CONTENT_SKILLS[selectedSkill].phases[0].tips.slice(0, 3).map((tip, i) => (<li key={i} className="text-[11px] text-cockpit-text">{tip}</li>))}</ul>
-                  </div>
-                )}
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setCreateStep("skill")} className="px-4 py-2 text-sm text-cockpit-muted hover:text-cockpit-text border border-cockpit-border rounded-xl">Voltar</button>
-                  <button onClick={handleCreate} disabled={!newTitle.trim() || isPending} className="flex items-center gap-2 px-4 py-2 bg-accent text-black text-sm font-semibold rounded-xl hover:bg-accent-hover disabled:opacity-50">
-                    {isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Criar
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <CreationModal
+            areas={areas}
+            onClose={() => setShowCreate(false)}
+            onCreated={(c) => setContents((prev) => [c, ...prev])}
+          />
         )}
 
         {/* ═══ TAB: VISÃO GERAL ═══ */}
