@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { sendMessage, getMe, escapeMdV2 } from "@/services/telegram.service"
+import { sendMessage, getMe, escapeMdV2, setWebhook, deleteWebhook, getWebhookInfo } from "@/services/telegram.service"
 import type { ActionResult } from "@/types"
 
 async function getUserId() {
@@ -120,14 +120,61 @@ export async function getTelegramStatusAction(): Promise<ActionResult> {
       const me = await getMe()
       if (me.ok) botUsername = me.username
     }
+    // Webhook info
+    const webhookSecretConfigured = !!process.env.TELEGRAM_WEBHOOK_SECRET
+    let webhook: { url: string; pendingUpdates: number; lastError: string | null } | null = null
+    if (tokenConfigured) {
+      const info = await getWebhookInfo()
+      if (info.ok) {
+        webhook = {
+          url: info.url,
+          pendingUpdates: info.pendingUpdateCount,
+          lastError: info.lastErrorMessage ?? null,
+        }
+      }
+    }
     return {
       success: true,
       data: {
         chatId: user?.telegramChatId ?? null,
         tokenConfigured,
         botUsername,
+        webhookSecretConfigured,
+        webhook,
       },
     }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Erro" }
+  }
+}
+
+// Configura webhook do Telegram apontando pra essa instância.
+// O user precisa fornecer a URL pública (ex: https://cockpitconteudo.vercel.app/api/telegram/webhook)
+// porque em dev local, localhost não é alcançável pelo Telegram.
+export async function setTelegramWebhookAction(publicUrl: string): Promise<ActionResult> {
+  try {
+    await getUserId() // só logado pode configurar
+    const secret = process.env.TELEGRAM_WEBHOOK_SECRET
+    if (!secret) return { success: false, error: "TELEGRAM_WEBHOOK_SECRET não configurado no env" }
+    const cleanUrl = publicUrl.trim().replace(/\/+$/, "")
+    if (!cleanUrl.startsWith("https://")) {
+      return { success: false, error: "URL precisa começar com https:// (Telegram exige)" }
+    }
+    const webhookUrl = cleanUrl.endsWith("/api/telegram/webhook") ? cleanUrl : `${cleanUrl}/api/telegram/webhook`
+    const result = await setWebhook({ url: webhookUrl, secretToken: secret })
+    if (!result.ok) return { success: false, error: result.error }
+    return { success: true, data: { url: webhookUrl } }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Erro" }
+  }
+}
+
+export async function deleteTelegramWebhookAction(): Promise<ActionResult> {
+  try {
+    await getUserId()
+    const result = await deleteWebhook()
+    if (!result.ok) return { success: false, error: result.error }
+    return { success: true, data: null }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Erro" }
   }

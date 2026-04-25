@@ -1,14 +1,22 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Bell, Send, CheckCircle2, AlertCircle, ExternalLink, Copy, Loader2, Zap, Target } from "lucide-react"
-import { saveTelegramChatIdAction, sendTelegramTestAction, toggleDigestTermAction } from "@/app/actions/telegram.actions"
+import { Bell, Send, CheckCircle2, AlertCircle, ExternalLink, Copy, Loader2, Zap, Target, MessageSquare, Webhook } from "lucide-react"
+import {
+  saveTelegramChatIdAction,
+  sendTelegramTestAction,
+  toggleDigestTermAction,
+  setTelegramWebhookAction,
+  deleteTelegramWebhookAction,
+} from "@/app/actions/telegram.actions"
 import { cn } from "@/lib/utils"
 
 type Status = {
   chatId: string | null
   tokenConfigured: boolean
   botUsername: string | null
+  webhookSecretConfigured: boolean
+  webhook: { url: string; pendingUpdates: number; lastError: string | null } | null
 }
 
 type DigestTerm = {
@@ -26,6 +34,9 @@ export function BotClient({ initialStatus, initialTerms }: { initialStatus: Stat
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null)
   const [saving, startSave] = useTransition()
   const [testing, startTest] = useTransition()
+  const [webhookUrl, setWebhookUrl] = useState(initialStatus.webhook?.url ?? "")
+  const [webhookActive, setWebhookActive] = useState(!!initialStatus.webhook?.url)
+  const [webhookBusy, setWebhookBusy] = useState(false)
   const [digestRunning, setDigestRunning] = useState(false)
   const [digestResult, setDigestResult] = useState<{
     themesProcessed: number
@@ -64,6 +75,44 @@ export function BotClient({ initialStatus, initialTerms }: { initialStatus: Stat
         setMessage({ type: "err", text: res.error ?? "Erro no teste" })
       }
     })
+  }
+
+  async function handleSetWebhook() {
+    setMessage(null)
+    if (!webhookUrl.trim()) {
+      setMessage({ type: "err", text: "Cola a URL pública (ex: https://cockpitconteudo.vercel.app)" })
+      return
+    }
+    setWebhookBusy(true)
+    try {
+      const res = await setTelegramWebhookAction(webhookUrl)
+      if (res.success) {
+        setWebhookActive(true)
+        const data = res.data as { url: string }
+        setMessage({ type: "ok", text: `Webhook configurado: ${data.url}` })
+      } else {
+        setMessage({ type: "err", text: res.error ?? "Erro" })
+      }
+    } finally {
+      setWebhookBusy(false)
+    }
+  }
+
+  async function handleDeleteWebhook() {
+    if (!confirm("Desativar webhook? Você deixa de receber respostas do Coach via Telegram.")) return
+    setMessage(null)
+    setWebhookBusy(true)
+    try {
+      const res = await deleteTelegramWebhookAction()
+      if (res.success) {
+        setWebhookActive(false)
+        setMessage({ type: "ok", text: "Webhook removido" })
+      } else {
+        setMessage({ type: "err", text: res.error ?? "Erro" })
+      }
+    } finally {
+      setWebhookBusy(false)
+    }
   }
 
   async function handleToggleTerm(termId: string, next: boolean) {
@@ -220,6 +269,75 @@ export function BotClient({ initialStatus, initialTerms }: { initialStatus: Stat
           </div>
         )}
       </div>
+
+      {/* Webhook do Coach via Telegram */}
+      {isBound && tokenOK && (
+        <div className="cockpit-card space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-cockpit-text flex items-center gap-2">
+              <MessageSquare size={14} className="text-accent" />
+              Coach via Telegram
+            </h2>
+            <p className="text-[11px] text-cockpit-muted mt-0.5">
+              Quando ativo, qualquer mensagem que você manda pro bot vira pergunta pro Coach (mesma engine de <a href="/coach" className="text-accent hover:underline">/coach</a>, com memória persistente).
+            </p>
+          </div>
+
+          {!status.webhookSecretConfigured && (
+            <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[11px] text-amber-500">
+              ⚠ Falta <code className="font-mono">TELEGRAM_WEBHOOK_SECRET</code> no env. Gere com <code className="font-mono">openssl rand -base64 32</code>, adicione no <code className="font-mono">.env.local</code> e na Vercel, depois reinicie.
+            </div>
+          )}
+
+          {status.webhookSecretConfigured && (
+            <>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder="https://cockpitconteudo.vercel.app"
+                  className="flex-1 px-3 py-2 bg-cockpit-bg border border-cockpit-border rounded-xl text-xs text-cockpit-text font-mono placeholder:text-cockpit-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
+                />
+                <button
+                  onClick={handleSetWebhook}
+                  disabled={webhookBusy}
+                  className="px-3 py-2 bg-accent text-black text-xs font-semibold rounded-xl hover:bg-accent-hover disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                >
+                  {webhookBusy ? <Loader2 size={12} className="animate-spin" /> : <Webhook size={12} />}
+                  {webhookActive ? "Atualizar" : "Ativar"}
+                </button>
+              </div>
+
+              {webhookActive && (
+                <div className="flex items-center justify-between p-2 bg-emerald-500/5 border border-emerald-500/20 rounded-lg text-[11px]">
+                  <span className="text-emerald-500 flex items-center gap-1.5">
+                    <CheckCircle2 size={12} />
+                    Webhook ativo
+                  </span>
+                  <button
+                    onClick={handleDeleteWebhook}
+                    disabled={webhookBusy}
+                    className="text-cockpit-muted hover:text-red-500 underline decoration-dotted"
+                  >
+                    desativar
+                  </button>
+                </div>
+              )}
+
+              {status.webhook?.lastError && (
+                <div className="p-2 bg-red-500/5 border border-red-500/20 rounded-lg text-[10px] text-red-500">
+                  Último erro Telegram: {status.webhook.lastError}
+                </div>
+              )}
+
+              <p className="text-[10px] text-cockpit-muted">
+                Em dev local, use ngrok ou similar pra ter URL pública. Em produção, é a URL do deploy Vercel.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Seleção de temas pro digest */}
       {isBound && tokenOK && (

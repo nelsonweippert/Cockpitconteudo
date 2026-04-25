@@ -61,3 +61,100 @@ export async function getMe(): Promise<{ ok: true; username: string; firstName: 
     return { ok: false, error: err instanceof Error ? err.message : "falha" }
   }
 }
+
+// Edita uma mensagem já enviada (usado pra atualizar "pensando..." → resposta).
+export async function editMessage(opts: {
+  chatId: string
+  messageId: number
+  text: string
+  parseMode?: "MarkdownV2" | "HTML" | "Markdown"
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { chatId, messageId, text, parseMode = "MarkdownV2" } = opts
+  try {
+    const res = await fetch(`${BASE}/bot${getToken()}/editMessageText`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+        parse_mode: parseMode,
+        disable_web_page_preview: true,
+      }),
+    })
+    const body = (await res.json()) as { ok: boolean; description?: string }
+    if (!body.ok) return { ok: false, error: body.description ?? "edit falhou" }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "falha" }
+  }
+}
+
+// Configura o webhook na Bot API. Chama 1x quando o user vincula a integração.
+export async function setWebhook(opts: {
+  url: string
+  secretToken: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE}/bot${getToken()}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: opts.url,
+        secret_token: opts.secretToken,
+        allowed_updates: ["message"],
+      }),
+    })
+    const body = (await res.json()) as { ok: boolean; description?: string }
+    if (!body.ok) return { ok: false, error: body.description ?? "setWebhook falhou" }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "falha" }
+  }
+}
+
+export async function deleteWebhook(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE}/bot${getToken()}/deleteWebhook`, { method: "POST" })
+    const body = (await res.json()) as { ok: boolean; description?: string }
+    if (!body.ok) return { ok: false, error: body.description ?? "deleteWebhook falhou" }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "falha" }
+  }
+}
+
+export async function getWebhookInfo(): Promise<{
+  ok: true
+  url: string
+  hasCustomCertificate: boolean
+  pendingUpdateCount: number
+  lastErrorDate?: number
+  lastErrorMessage?: string
+} | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE}/bot${getToken()}/getWebhookInfo`)
+    const body = (await res.json()) as {
+      ok: boolean
+      result?: {
+        url: string
+        has_custom_certificate: boolean
+        pending_update_count: number
+        last_error_date?: number
+        last_error_message?: string
+      }
+      description?: string
+    }
+    if (!body.ok || !body.result) return { ok: false, error: body.description ?? "getWebhookInfo falhou" }
+    return {
+      ok: true,
+      url: body.result.url,
+      hasCustomCertificate: body.result.has_custom_certificate,
+      pendingUpdateCount: body.result.pending_update_count,
+      lastErrorDate: body.result.last_error_date,
+      lastErrorMessage: body.result.last_error_message,
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "falha" }
+  }
+}

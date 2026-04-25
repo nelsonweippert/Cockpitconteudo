@@ -8,10 +8,12 @@ export default async function BotPage() {
     getTelegramStatusAction(),
     getDigestTermsAction(),
   ])
-  const statusData = (status.success ? status.data : { chatId: null, tokenConfigured: false, botUsername: null }) as {
+  const statusData = (status.success ? status.data : { chatId: null, tokenConfigured: false, botUsername: null, webhookSecretConfigured: false, webhook: null }) as {
     chatId: string | null
     tokenConfigured: boolean
     botUsername: string | null
+    webhookSecretConfigured: boolean
+    webhook: { url: string; pendingUpdates: number; lastError: string | null } | null
   }
   const termsData = (terms.success ? terms.data : []) as Array<{
     id: string
