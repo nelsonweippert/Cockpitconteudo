@@ -48,6 +48,7 @@ export function PrePublishGate({ open, onClose, onConfirm, content }: Props) {
   // Quando abre, dispara LLM review
   useEffect(() => {
     if (!open) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset ao abrir o modal antes do fetch
     setLlmReview(null)
     setLlmError(null)
     setLoading(true)

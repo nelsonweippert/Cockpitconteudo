@@ -45,7 +45,7 @@ export function ConteudoClient({
 }: Props) {
   const [contents, setContents] = useState<Content[]>(initialContents)
   const [selectedContent, setSelectedContent] = useState<Content | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const [tab, setTab] = useState<Tab>(initialTab)
 
   // Modal de criação (state interna está em CreationModal)

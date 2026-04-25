@@ -61,7 +61,14 @@ interface Props {
 export function RadarClient({ evidences, totalCount, processedCount, termCounts }: Props) {
   const router = useRouter()
   const [refreshing, setRefreshing] = useState(false)
-  const [lastRefreshAt, setLastRefreshAt] = useState<number>(Date.now())
+  const [lastRefreshAt, setLastRefreshAt] = useState<number>(() => Date.now())
+  const [now, setNow] = useState<number>(() => Date.now())
+
+  // Tick a cada segundo pra "X segundos desde refresh" ficar vivo
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Filtros
   const [termFilter, setTermFilter] = useState<string | null>(null)
@@ -118,7 +125,7 @@ export function RadarClient({ evidences, totalCount, processedCount, termCounts 
   const hasActiveFilter = termFilter || tierFilter !== "all" || freshnessFilter !== "all" || processedFilter !== "all" || searchQuery
 
   const conversionRate = totalCount > 0 ? Math.round((processedCount / totalCount) * 100) : 0
-  const secondsSinceRefresh = Math.floor((Date.now() - lastRefreshAt) / 1000)
+  const secondsSinceRefresh = Math.floor((now - lastRefreshAt) / 1000)
 
   return (
     <div className="max-w-6xl mx-auto space-y-5">

@@ -39,6 +39,7 @@ export function CanalClient({
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- toast direto a partir de URL params (?connected= / ?error=)
     if (connected) setBanner({ type: "ok", text: `✓ Canal "${connected}" conectado` })
     else if (error) setBanner({ type: "err", text: `Erro: ${error}` })
     if (connected || error) {
@@ -106,6 +107,7 @@ export function CanalClient({
             Vincule seu canal do YouTube pra começar a coletar snapshots diários e
             permitir que o Coach use as métricas no contexto.
           </p>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- OAuth redirect endpoint, não é page */}
           <a
             href="/api/auth/youtube/connect"
             className="inline-flex items-center gap-2 mt-4 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-xl transition-colors"
@@ -219,6 +221,7 @@ export function CanalClient({
           })}
 
           {/* Botão pra adicionar mais um canal */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- OAuth redirect endpoint, não é page */}
           <a
             href="/api/auth/youtube/connect"
             className="cockpit-card flex items-center justify-center gap-2 py-4 text-sm text-cockpit-muted hover:text-accent border-2 border-dashed border-cockpit-border hover:border-accent/30 transition-colors"

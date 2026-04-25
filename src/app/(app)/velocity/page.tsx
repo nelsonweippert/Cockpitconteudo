@@ -9,6 +9,7 @@ export default async function VelocityPage() {
 
   // Vídeos do user (origin=own) com snapshots nos últimos 7 dias.
   // Pega o snapshot mais recente de cada vídeo + a curva pra desenhar
+  // eslint-disable-next-line react-hooks/purity -- server component, executa por request
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000)
   const allSnapshots = await db.videoSnapshot.findMany({
     where: {

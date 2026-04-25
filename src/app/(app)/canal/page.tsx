@@ -13,6 +13,7 @@ export default async function CanalPage() {
   })
 
   // Carrega últimos 30 dias de snapshots por connection
+  // eslint-disable-next-line react-hooks/purity -- server component, executa por request
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
   const allSnapshots = await db.channelSnapshot.findMany({
     where: {

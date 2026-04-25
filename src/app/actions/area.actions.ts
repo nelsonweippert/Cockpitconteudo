@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { createAreaSchema } from "@/validations/area.validation"
-import { createArea, updateArea, archiveArea } from "@/services/area.service"
+import { createArea, archiveArea } from "@/services/area.service"
 import type { ActionResult } from "@/types"
 
 async function getUserId() {

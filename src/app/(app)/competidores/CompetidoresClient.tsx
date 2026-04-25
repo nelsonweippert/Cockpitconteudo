@@ -4,7 +4,6 @@ import { useState, useTransition } from "react"
 import Image from "next/image"
 import { Eye, Plus, Loader2, ExternalLink, Trash2, RefreshCw, Flame, AlertCircle } from "lucide-react"
 import { addCompetitorAction, removeCompetitorAction, pollCompetitorAction } from "@/app/actions/competitor.actions"
-import { cn } from "@/lib/utils"
 
 type Competitor = {
   id: string

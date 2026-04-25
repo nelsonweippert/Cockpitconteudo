@@ -13,6 +13,7 @@ export default async function CompetidoresPage() {
   })
 
   // Últimos outliers (últimas 72h, multiplier >= 2)
+  // eslint-disable-next-line react-hooks/purity -- server component, executa por request
   const since = new Date(Date.now() - 72 * 3600 * 1000)
   const recentOutliers = await db.videoSnapshot.findMany({
     where: {

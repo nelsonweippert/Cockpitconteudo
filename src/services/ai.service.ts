@@ -21,8 +21,6 @@ const DISCOVERY_MODEL: ModelId = (process.env.DISCOVERY_MODEL as ModelId) || "cl
 const TRIAGE_MODEL: ModelId = (process.env.TRIAGE_MODEL as ModelId) || "claude-haiku-4-5"
 const DEEP_MODEL: ModelId = (process.env.DEEP_MODEL as ModelId) || "claude-haiku-4-5"
 const NARRATIVE_MODEL: ModelId = (process.env.NARRATIVE_MODEL as ModelId) || "claude-sonnet-4-6"
-// Retrocompat: código antigo que usa IDEAS_MODEL continua funcionando (narrative é o "coração").
-const IDEAS_MODEL: ModelId = NARRATIVE_MODEL
 const REVIEW_MODEL: ModelId = "claude-sonnet-4-6"
 
 export async function generateContentSuggestion(systemPrompt: string, userPrompt: string): Promise<string> {

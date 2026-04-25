@@ -1,14 +1,14 @@
 // Endpoint manual — user clica "Rodar digest agora" na UI.
 // Autenticado via session (nunca por CRON_SECRET).
 
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { runDailyDigestForUser } from "@/services/daily-digest.service"
 
 export const runtime = "nodejs"
 export const maxDuration = 300 // até 5min (Vercel Pro) — digest pesado
 
-export async function POST(_req: NextRequest) {
+export async function POST() {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ success: false, error: "Não autorizado" }, { status: 401 })
 

@@ -39,6 +39,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const saved = localStorage.getItem("content-hub-theme") as Theme | null
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydratação de localStorage (SSR-safe)
     if (saved === "sunset" || saved === "night" || saved === "day") setTheme(saved)
   }, [])
 
