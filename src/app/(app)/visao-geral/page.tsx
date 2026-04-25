@@ -1,5 +1,5 @@
 import { loadInitialContentData } from "../_lib/load-initial"
-import { ConteudoClient } from "../conteudo/ConteudoClient"
+import { ConteudoClient } from "../_components/conteudo/ConteudoClient"
 
 export const metadata = { title: "Visão Geral · Content Hub" }
 

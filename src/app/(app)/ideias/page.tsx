@@ -1,5 +1,5 @@
 import { loadInitialContentData } from "../_lib/load-initial"
-import { ConteudoClient } from "../conteudo/ConteudoClient"
+import { ConteudoClient } from "../_components/conteudo/ConteudoClient"
 import { db } from "@/lib/db"
 import { IdeiasHeader } from "./IdeiasHeader"
 

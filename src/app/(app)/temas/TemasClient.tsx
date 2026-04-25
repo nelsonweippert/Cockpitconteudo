@@ -7,7 +7,7 @@ import {
   addMonitorTermAction, deleteMonitorTermAction,
   toggleMonitorTermAction, updateMonitorTermIntentAction,
 } from "@/app/actions/idea.actions"
-import { TermSourcesManager, type TermSource } from "../conteudo/TermSourcesManager"
+import { TermSourcesManager, type TermSource } from "../_components/conteudo/TermSourcesManager"
 
 export type TermView = {
   id: string
