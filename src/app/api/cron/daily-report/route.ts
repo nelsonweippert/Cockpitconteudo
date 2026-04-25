@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { runDailyDigestForAllUsers } from "@/services/daily-digest.service"
+import { captureSnapshotsForAllUsers } from "@/services/channel-snapshot.service"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
@@ -22,10 +23,25 @@ export async function GET(req: NextRequest) {
 
   const start = Date.now()
   try {
-    const summary = await runDailyDigestForAllUsers()
+    // Roda em paralelo: digest (Telegram) + snapshots (canais conectados)
+    const [digestSummary, snapshotsSummary] = await Promise.all([
+      runDailyDigestForAllUsers(),
+      captureSnapshotsForAllUsers(),
+    ])
+
     const durationMs = Date.now() - start
-    console.log(`[cron/daily-report] users=${summary.usersProcessed} ok=${summary.usersSuccess} failed=${summary.usersWithErrors} duration=${durationMs}ms`)
-    return NextResponse.json({ ok: true, ...summary, durationMs })
+    console.log(
+      `[cron/daily-report] digest: users=${digestSummary.usersProcessed} ok=${digestSummary.usersSuccess} failed=${digestSummary.usersWithErrors} | ` +
+      `snapshots: users=${snapshotsSummary.usersProcessed} taken=${snapshotsSummary.snapshotsTaken} errors=${snapshotsSummary.errors} | ` +
+      `duration=${durationMs}ms`,
+    )
+
+    return NextResponse.json({
+      ok: true,
+      digest: digestSummary,
+      snapshots: snapshotsSummary,
+      durationMs,
+    })
   } catch (err) {
     console.error("[cron/daily-report] erro:", err)
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "erro" }, { status: 500 })

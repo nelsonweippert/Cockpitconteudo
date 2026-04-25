@@ -21,15 +21,17 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  areas               Area[]
-  contents            Content[]
-  skillSources        SkillSource[]
-  apiUsage            ApiUsage[]
-  monitorTerms        MonitorTerm[]
-  ideaFeed            IdeaFeed[]
-  newsEvidence        NewsEvidence[]
-  themeDiscoveryRuns  ThemeDiscoveryRun[]
-  coachConversations  CoachConversation[]
+  areas                Area[]
+  contents             Content[]
+  skillSources         SkillSource[]
+  apiUsage             ApiUsage[]
+  monitorTerms         MonitorTerm[]
+  ideaFeed             IdeaFeed[]
+  newsEvidence         NewsEvidence[]
+  themeDiscoveryRuns   ThemeDiscoveryRun[]
+  coachConversations   CoachConversation[]
+  platformConnections  PlatformConnection[]
+  channelSnapshots     ChannelSnapshot[]
 
   @@map("users")
 }
@@ -365,4 +367,60 @@ model CoachMessage {
 
   @@index([conversationId, createdAt])
   @@map("coach_messages")
+}
+
+// ========================================
+// PlatformConnection — credenciais OAuth de canais externos (YouTube, IG, TikTok)
+// ========================================
+
+model PlatformConnection {
+  id           String   @id @default(cuid())
+  userId       String
+  platform     String   // "youtube" | "instagram" | "tiktok"
+  // Identidade do canal externo
+  externalId   String   // YouTube channelId, IG user_id, etc.
+  externalName String   // Nome do canal
+  externalHandle String? // @handle, se aplicável
+  thumbnailUrl String?
+  // OAuth tokens (criptografar em prod via Prisma extensions ou app-level)
+  accessToken  String   @db.Text
+  refreshToken String?  @db.Text
+  expiresAt    DateTime?
+  scope        String?  @db.Text
+  // Metadata
+  isActive     Boolean  @default(true)
+  connectedAt  DateTime @default(now())
+  lastSyncAt   DateTime?
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshots ChannelSnapshot[]
+
+  @@unique([userId, platform, externalId])
+  @@index([userId, platform])
+  @@map("platform_connections")
+}
+
+// ========================================
+// ChannelSnapshot — métricas diárias de cada canal conectado
+// Permite ver crescimento ao longo do tempo (subs delta, views delta).
+// ========================================
+
+model ChannelSnapshot {
+  id                   String   @id @default(cuid())
+  userId               String
+  platformConnectionId String
+  takenAt              DateTime @default(now())
+  // Métricas básicas (todas plataformas têm equivalente)
+  subscribers          BigInt
+  totalViews           BigInt
+  videoCount           Int
+  // Métricas extra (JSON pra extensibilidade — retention médio, watch time, etc.)
+  extras               Json?
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection PlatformConnection @relation(fields: [platformConnectionId], references: [id], onDelete: Cascade)
+
+  @@index([platformConnectionId, takenAt])
+  @@index([userId, takenAt])
+  @@map("channel_snapshots")
 }

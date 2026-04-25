@@ -58,6 +58,15 @@ export type CoachContext = {
     publishedLast30d: number
     inProduction: number
   }
+  channels: Array<{
+    platform: string
+    name: string
+    handle: string | null
+    connectedAt: string
+    latestSnapshot: { subscribers: number; totalViews: number; videoCount: number; takenAt: string } | null
+    delta7d: { subs: number; views: number; videos: number } | null
+    delta30d: { subs: number; views: number; videos: number } | null
+  }>
   apiUsage: {
     last30dCostUsd: number
     last30dCalls: number
@@ -69,8 +78,9 @@ export type CoachContext = {
 export async function loadCoachContext(userId: string): Promise<CoachContext> {
   const now = new Date()
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 3600 * 1000)
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000)
 
-  const [user, areas, terms, ideas, contents, allContents, usage30d] = await Promise.all([
+  const [user, areas, terms, ideas, contents, allContents, usage30d, connections, recentSnapshots] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true, email: true } }),
     db.area.findMany({
       where: { userId, isArchived: false },
@@ -108,6 +118,15 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
     db.apiUsage.findMany({
       where: { userId, createdAt: { gte: thirtyDaysAgo } },
       select: { action: true, costUsd: true },
+    }),
+    db.platformConnection.findMany({
+      where: { userId, isActive: true },
+      select: { id: true, platform: true, externalName: true, externalHandle: true, connectedAt: true },
+    }),
+    db.channelSnapshot.findMany({
+      where: { userId, takenAt: { gte: thirtyDaysAgo } },
+      orderBy: { takenAt: "asc" },
+      select: { platformConnectionId: true, takenAt: true, subscribers: true, totalViews: true, videoCount: true },
     }),
   ])
 
@@ -155,6 +174,43 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
     }
   })
 
+  // Snapshots agrupados por connection
+  const snapshotsByConn = new Map<string, typeof recentSnapshots>()
+  for (const s of recentSnapshots) {
+    const list = snapshotsByConn.get(s.platformConnectionId) ?? []
+    list.push(s)
+    snapshotsByConn.set(s.platformConnectionId, list)
+  }
+
+  const channels = connections.map((c) => {
+    const snaps = snapshotsByConn.get(c.id) ?? []
+    const latest = snaps[snaps.length - 1] ?? null
+    const oldest30d = snaps[0] ?? null
+    const oldest7d = snaps.find((s) => s.takenAt >= sevenDaysAgo) ?? null
+    return {
+      platform: c.platform,
+      name: c.externalName,
+      handle: c.externalHandle,
+      connectedAt: c.connectedAt.toISOString(),
+      latestSnapshot: latest ? {
+        subscribers: Number(latest.subscribers),
+        totalViews: Number(latest.totalViews),
+        videoCount: latest.videoCount,
+        takenAt: latest.takenAt.toISOString(),
+      } : null,
+      delta7d: latest && oldest7d ? {
+        subs: Number(latest.subscribers) - Number(oldest7d.subscribers),
+        views: Number(latest.totalViews) - Number(oldest7d.totalViews),
+        videos: latest.videoCount - oldest7d.videoCount,
+      } : null,
+      delta30d: latest && oldest30d && snaps.length > 1 ? {
+        subs: Number(latest.subscribers) - Number(oldest30d.subscribers),
+        views: Number(latest.totalViews) - Number(oldest30d.totalViews),
+        videos: latest.videoCount - oldest30d.videoCount,
+      } : null,
+    }
+  })
+
   return {
     user: { name: user.name, email: user.email },
     areas,
@@ -172,6 +228,7 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
       createdAt: c.createdAt.toISOString(),
     })),
     contentStats: { total: allContents.length, byPhase, publishedLast30d, inProduction },
+    channels,
     apiUsage: { last30dCostUsd, last30dCalls: usage30d.length, topActions },
     generatedAt: now.toISOString(),
   }
@@ -219,6 +276,32 @@ function renderContext(ctx: CoachContext): string {
   lines.push(`- Publicados nos últimos 30 dias: ${ctx.contentStats.publishedLast30d}`)
   lines.push(`- Distribuição por fase: ${Object.entries(ctx.contentStats.byPhase).map(([k, v]) => `${k}=${v}`).join(", ") || "(vazio)"}`)
   lines.push(``)
+
+  // Canais conectados (YouTube, etc.)
+  if (ctx.channels.length > 0) {
+    lines.push(`## Canais conectados`)
+    for (const ch of ctx.channels) {
+      lines.push(`### ${ch.platform.toUpperCase()} — "${ch.name}"${ch.handle ? ` (${ch.handle})` : ""}`)
+      if (ch.latestSnapshot) {
+        const ls = ch.latestSnapshot
+        lines.push(`- Inscritos: ${ls.subscribers.toLocaleString("pt-BR")}`)
+        lines.push(`- Views totais: ${ls.totalViews.toLocaleString("pt-BR")}`)
+        lines.push(`- Vídeos: ${ls.videoCount}`)
+        lines.push(`- Snapshot: ${ls.takenAt.slice(0, 10)}`)
+      } else {
+        lines.push(`- (sem snapshots ainda)`)
+      }
+      if (ch.delta7d) {
+        const d = ch.delta7d
+        lines.push(`- Delta 7d: ${d.subs >= 0 ? "+" : ""}${d.subs} subs, ${d.views >= 0 ? "+" : ""}${d.views.toLocaleString("pt-BR")} views, ${d.videos >= 0 ? "+" : ""}${d.videos} vídeos`)
+      }
+      if (ch.delta30d) {
+        const d = ch.delta30d
+        lines.push(`- Delta 30d: ${d.subs >= 0 ? "+" : ""}${d.subs} subs, ${d.views >= 0 ? "+" : ""}${d.views.toLocaleString("pt-BR")} views, ${d.videos >= 0 ? "+" : ""}${d.videos} vídeos`)
+      }
+    }
+    lines.push(``)
+  }
 
   // Conteúdos recentes
   if (ctx.recentContents.length > 0) {
@@ -297,7 +380,14 @@ QUANDO O USUÁRIO PERGUNTA SOBRE IDEIAS
 - Sugira quais merecem virar conteúdo.
 
 QUANDO O USUÁRIO PERGUNTA SOBRE TEMAS
-- Mostre quais têm fontes curadas, quais estão sub-utilizados, quais geram mais ideias.`
+- Mostre quais têm fontes curadas, quais estão sub-utilizados, quais geram mais ideias.
+
+QUANDO O USUÁRIO PERGUNTA SOBRE PERFORMANCE / CRESCIMENTO DO CANAL
+- Use a seção "Canais conectados" do contexto. Cite delta 7d/30d com números reais.
+- Se delta30d está positivo mas baixo, sinaliza ("subiu 80 subs em 30d, ritmo de ~2.5/dia").
+- Se publicou X vídeos no período (delta videos) vs publishedLast30d do funil, valide consistência.
+- Se NÃO tem canal conectado, instrua: "vá em /canal e clique em Conectar canal do YouTube".
+- Se snapshots < 2, diga que precisa de mais alguns dias pra ter delta confiável.`
 
 // ─── Conversação: adiciona msg e gera resposta streaming ────────────────
 
