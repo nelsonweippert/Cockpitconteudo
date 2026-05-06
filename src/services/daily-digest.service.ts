@@ -328,9 +328,17 @@ Nenhum tema habilitado pro digest\\. Em /bot você escolhe quais temas aparecem 
   const introRes = await sendMessage({ chatId: user.telegramChatId, text: buildIntroMessage(termsToProcess.length) })
   if (introRes.ok) result.messagesSent++
 
-  // Processa tema a tema (sequencial pra evitar burst na Bot API)
-  for (const term of termsToProcess) {
-    result.themesProcessed++
+  // Fase 1: discovery + sumarização em PARALELO (calls Anthropic/HN/Reddit independentes por tema).
+  // Fase 2: envio Telegram SEQUENCIAL (preserva ordem dos temas e evita burst na Bot API).
+  type ThemePrep = {
+    term: typeof termsToProcess[number]
+    messageText: string
+    cached: boolean
+    hadCandidates: boolean
+    error?: string
+  }
+
+  const preps: ThemePrep[] = await Promise.all(termsToProcess.map(async (term): Promise<ThemePrep> => {
     try {
       const activeSources = (Array.isArray(term.sources) ? (term.sources as unknown as TermSource[]) : [])
         .filter((s) => s?.isActive !== false)
@@ -342,8 +350,6 @@ Nenhum tema habilitado pro digest\\. Em /bot você escolhe quais temas aparecem 
         intent: term.intent,
         sources: activeSources,
       })
-      if (cached) result.themesCached++
-      if (candidates.length > 0) result.themesWithNews++
 
       let messageText: string
       if (candidates.length === 0) {
@@ -366,17 +372,9 @@ Nenhum tema habilitado pro digest\\. Em /bot você escolhe quais temas aparecem 
         }).catch(() => {})
       }
 
-      // Telegram tem limite de 4096 chars/msg. Se passar, trunca.
-      const truncated = messageText.length > 3800 ? messageText.slice(0, 3750) + "\n\n_\\.\\.\\. \\(truncado\\)_" : messageText
-      const sent = await sendMessage({ chatId: user.telegramChatId, text: truncated })
-      if (sent.ok) {
-        result.messagesSent++
-      } else {
-        result.errors.push(`${term.term}: falha envio — ${sent.error}`)
-      }
+      return { term, messageText, cached, hadCandidates: candidates.length > 0 }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "erro"
-      result.errors.push(`${term.term}: ${msg}`)
       console.error(`[daily-digest] tema "${term.term}" falhou:`, err)
       // Persiste erro no run de hoje se existe
       try {
@@ -387,6 +385,30 @@ Nenhum tema habilitado pro digest\\. Em /bot você escolhe quais temas aparecem 
           data: { digestError: msg },
         })
       } catch { /* ok se não existe ainda */ }
+      return { term, messageText: "", cached: false, hadCandidates: false, error: msg }
+    }
+  }))
+
+  // Fase 2: envia mensagens em ordem (não burstar Telegram Bot API)
+  for (const prep of preps) {
+    result.themesProcessed++
+    if (prep.cached) result.themesCached++
+    if (prep.hadCandidates) result.themesWithNews++
+
+    if (prep.error) {
+      result.errors.push(`${prep.term.term}: ${prep.error}`)
+      continue
+    }
+
+    // Telegram tem limite de 4096 chars/msg. Se passar, trunca.
+    const truncated = prep.messageText.length > 3800
+      ? prep.messageText.slice(0, 3750) + "\n\n_\\.\\.\\. \\(truncado\\)_"
+      : prep.messageText
+    const sent = await sendMessage({ chatId: user.telegramChatId, text: truncated })
+    if (sent.ok) {
+      result.messagesSent++
+    } else {
+      result.errors.push(`${prep.term.term}: falha envio — ${sent.error}`)
     }
   }
 
