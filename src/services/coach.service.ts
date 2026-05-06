@@ -94,7 +94,7 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 3600 * 1000)
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000)
 
-  const [user, areas, terms, ideas, contents, allContents, usage30d, connections, recentSnapshots] = await Promise.all([
+  const [user, areas, terms, ideas, contents, allContents, usage30d, connections, recentSnapshots, recentDigestRuns] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true, email: true } }),
     db.area.findMany({
       where: { userId, isArchived: false },
@@ -142,7 +142,21 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
       orderBy: { takenAt: "asc" },
       select: { platformConnectionId: true, takenAt: true, subscribers: true, totalViews: true, videoCount: true },
     }),
+    // Pega só runs com digestSentAt — orderBy desc + dedup por termId pega o último envio por tema
+    db.themeDiscoveryRun.findMany({
+      where: { userId, digestSentAt: { not: null } },
+      orderBy: { digestSentAt: "desc" },
+      select: { termId: true, digestSentAt: true },
+    }),
   ])
+
+  // Mapa termId → último digestSentAt (já vem ordenado desc, dedup mantém o primeiro)
+  const lastDigestByTerm = new Map<string, Date>()
+  for (const r of recentDigestRuns) {
+    if (r.digestSentAt && !lastDigestByTerm.has(r.termId)) {
+      lastDigestByTerm.set(r.termId, r.digestSentAt)
+    }
+  }
 
   // Vídeos quentes do user (próprios) + outliers de competidores — em queries separadas
   const [ownVideoSnapshots, competitorOutlierRows] = await Promise.all([
@@ -209,7 +223,7 @@ export async function loadCoachContext(userId: string): Promise<CoachContext> {
       isActive: t.isActive,
       includeInDigest: t.includeInDigest,
       sourcesCount: { total: arr.length, active: active.length, byType },
-      lastDigestAt: null as string | null, // pode preencher depois consultando ThemeDiscoveryRun
+      lastDigestAt: lastDigestByTerm.get(t.id)?.toISOString() ?? null,
     }
   })
 
@@ -338,6 +352,11 @@ function renderContext(ctx: CoachContext): string {
       lines.push(`- "${t.term}"${flagStr}`)
       if (t.intent) lines.push(`  intent: ${t.intent}`)
       lines.push(`  fontes: ${t.sourcesCount.active}/${t.sourcesCount.total} ativas${types ? ` (${types})` : ""}`)
+      if (t.lastDigestAt) {
+        const daysAgo = Math.floor((Date.now() - new Date(t.lastDigestAt).getTime()) / (1000 * 60 * 60 * 24))
+        const label = daysAgo === 0 ? "hoje" : daysAgo === 1 ? "ontem" : `há ${daysAgo}d`
+        lines.push(`  último digest: ${label}`)
+      }
     }
     lines.push(``)
   }
