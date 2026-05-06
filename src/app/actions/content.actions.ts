@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { createContent, updateContent, archiveContent } from "@/services/content.service"
+import { buildContentMarkdown, buildContentFilename, type ContentExportReferences } from "@/lib/content-export"
 import type { ActionResult } from "@/types"
 
 async function getUserId() {
@@ -107,5 +108,49 @@ export async function getContentReferencesAction(contentId: string): Promise<Act
   } catch (err) {
     console.error("[getContentReferences]", err)
     return { success: false, error: "Erro ao buscar referências" }
+  }
+}
+
+// Exporta um Content como arquivo Markdown — inclui todas as fases e fontes da pesquisa.
+// Retorna { markdown, filename } pra UI disparar download via Blob.
+export async function exportContentMarkdownAction(contentId: string): Promise<ActionResult> {
+  try {
+    const userId = await getUserId()
+    const content = await db.content.findFirst({
+      where: { id: contentId, userId },
+      include: {
+        area: true,
+        areas: { include: { area: true } },
+      },
+    })
+    if (!content) return { success: false, error: "Conteúdo não encontrado" }
+
+    let references: ContentExportReferences = null
+    if (content.ideaFeedId) {
+      const idea = await db.ideaFeed.findFirst({
+        where: { id: content.ideaFeedId, userId },
+        include: { evidence: true },
+      })
+      if (idea) {
+        const supIds = idea.supportingEvidenceIds ?? []
+        const supporting = supIds.length > 0
+          ? await db.newsEvidence.findMany({ where: { id: { in: supIds }, userId } })
+          : []
+        references = {
+          primary: idea.evidence,
+          supporting,
+          ideaTitle: idea.title,
+          ideaTerm: idea.term,
+          ideaQuote: idea.evidenceQuote,
+        }
+      }
+    }
+
+    const markdown = buildContentMarkdown(content, references)
+    const filename = buildContentFilename(content)
+    return { success: true, data: { markdown, filename } }
+  } catch (err) {
+    console.error("[exportContentMarkdown]", err)
+    return { success: false, error: "Erro ao exportar conteúdo" }
   }
 }

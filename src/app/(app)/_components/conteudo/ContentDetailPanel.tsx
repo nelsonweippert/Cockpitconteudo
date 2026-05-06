@@ -4,10 +4,10 @@ import { useCallback, useEffect, useState, useTransition } from "react"
 import {
   X, Loader2, Archive, ChevronRight, ChevronLeft,
   Lightbulb, ExternalLink, Sparkles, RefreshCw,
-  Scissors, Send, PenTool, ClipboardList,
+  Scissors, Send, PenTool, ClipboardList, Download,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { updateContentAction, advanceContentPhaseAction, archiveContentAction, getContentReferencesAction } from "@/app/actions/content.actions"
+import { updateContentAction, advanceContentPhaseAction, archiveContentAction, getContentReferencesAction, exportContentMarkdownAction } from "@/app/actions/content.actions"
 import { CONTENT_SKILLS, type SkillId } from "@/config/content-skills"
 import type { Area, ContentPhase } from "@/types"
 import { SeoScorePanel } from "./SeoScorePanel"
@@ -132,6 +132,27 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
 
   function handleArchive() {
     startTransition(async () => { const r = await archiveContentAction(content.id); if (r.success) { onArchive(content.id); onClose() } })
+  }
+
+  const [exporting, setExporting] = useState(false)
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const r = await exportContentMarkdownAction(content.id)
+      if (!r.success || !r.data) return
+      const { markdown, filename } = r.data as { markdown: string; filename: string }
+      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
   }
 
   function handleToggleArea(areaId: string) {
@@ -314,6 +335,9 @@ export function ContentDetailPanel({ content, areas, onClose, onUpdate, onArchiv
               </div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
+              <button onClick={handleExport} disabled={exporting} title="Exportar como Markdown" className="p-2 text-cockpit-muted hover:text-accent rounded-lg hover:bg-accent/10 disabled:opacity-50">
+                {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              </button>
               <button onClick={handleArchive} className="p-2 text-cockpit-muted hover:text-amber-500 rounded-lg hover:bg-amber-500/10"><Archive size={16} /></button>
               <button onClick={onClose} className="p-2 text-cockpit-muted hover:text-cockpit-text rounded-lg hover:bg-cockpit-surface-hover"><X size={16} /></button>
             </div>
